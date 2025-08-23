@@ -19,9 +19,10 @@ function getPointerPos(e) {
     clientX = e.clientX;
     clientY = e.clientY;
   }
+
   return {
-    x: (clientX - rect.left) * (canvas.width / rect.width),
-    y: (clientY - rect.top) * (canvas.height / rect.height),
+    x: (clientX - rect.left) * dpr,
+    y: (clientY - rect.top) * dpr,
   };
 }
 
