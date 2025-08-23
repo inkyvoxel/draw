@@ -11,17 +11,18 @@ let dpr = window.devicePixelRatio || 1;
 
 function getPointerPos(e) {
   const rect = canvas.getBoundingClientRect();
+  let clientX, clientY;
   if (e.touches) {
-    return {
-      x: (e.touches[0].clientX - rect.left) * (canvas.width / rect.width),
-      y: (e.touches[0].clientY - rect.top) * (canvas.height / rect.height),
-    };
+    clientX = e.touches[0].clientX;
+    clientY = e.touches[0].clientY;
   } else {
-    return {
-      x: e.offsetX * (canvas.width / rect.width),
-      y: e.offsetY * (canvas.height / rect.height),
-    };
+    clientX = e.clientX;
+    clientY = e.clientY;
   }
+  return {
+    x: (clientX - rect.left) * (canvas.width / rect.width),
+    y: (clientY - rect.top) * (canvas.height / rect.height),
+  };
 }
 
 function startDraw(e) {
