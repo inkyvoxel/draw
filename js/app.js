@@ -21,8 +21,8 @@ function getPointerPos(e) {
   }
 
   return {
-    x: (clientX - rect.left) * dpr,
-    y: (clientY - rect.top) * dpr,
+    x: clientX - rect.left,
+    y: clientY - rect.top,
   };
 }
 
