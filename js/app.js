@@ -1,6 +1,6 @@
 const canvas = document.getElementById("draw-canvas");
 const ctx = canvas.getContext("2d");
-const colourPicker = document.getElementById("color");
+const colorPicker = document.getElementById("color");
 const sizePicker = document.getElementById("size");
 const clearBtn = document.getElementById("clear");
 
@@ -36,7 +36,7 @@ function draw(e) {
   if (!drawing) return;
   e.preventDefault();
   const pos = getPointerPos(e);
-  ctx.strokeStyle = colourPicker.value;
+  ctx.strokeStyle = colorPicker.value;
   ctx.lineWidth = Number(sizePicker.value);
   ctx.lineCap = "round";
   ctx.beginPath();
