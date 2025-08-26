@@ -133,8 +133,37 @@ class DrawingApp {
    */
   getPointerPosition(e) {
     const rect = this.canvas.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    /**
+     * Determines the correct touch point for all touch event types.
+     * Uses changedTouches[0] for 'touchend' and 'touchcancel', otherwise touches[0].
+     * Falls back to mouse event properties if not a touch event.
+     */
+    let clientX, clientY;
+    if (e.touches || e.changedTouches) {
+      // Touch event
+      if (e.type === "touchend" || e.type === "touchcancel") {
+        if (e.changedTouches && e.changedTouches.length > 0) {
+          clientX = e.changedTouches[0].clientX;
+          clientY = e.changedTouches[0].clientY;
+        } else {
+          // Fallback: no touches left, use last known position (could be undefined)
+          clientX = 0;
+          clientY = 0;
+        }
+      } else {
+        if (e.touches && e.touches.length > 0) {
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+        } else {
+          clientX = 0;
+          clientY = 0;
+        }
+      }
+    } else {
+      // Mouse event
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
 
     return {
       x: clientX - rect.left,
