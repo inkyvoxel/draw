@@ -28,6 +28,10 @@ class DrawingApp {
     this.stateSaveTimeout = null;
     this.stateSaveDelay = 300; // Delay in milliseconds for debouncing
 
+    // UI state tracking for optimised updates
+    this.lastUndoState = null;
+    this.lastRedoState = null;
+
     // Offscreen canvas to preserve the full drawing area
     this.offscreenCanvas = document.createElement("canvas");
     this.offscreenCtx = this.offscreenCanvas.getContext("2d");
@@ -786,12 +790,24 @@ class DrawingApp {
   }
 
   /**
-   * Updates the UI, enabling or disabling undo/redo buttons as appropriate.
+   * Updates the UI, enabling or disabling undo/redo buttons only when their state changes.
    * @returns {void}
    */
   updateUI() {
-    this.undoBtn.disabled = !this.history.canUndo();
-    this.redoBtn.disabled = !this.history.canRedo();
+    const canUndo = this.history.canUndo();
+    const canRedo = this.history.canRedo();
+
+    // Only update undo button if its state has changed
+    if (this.lastUndoState !== canUndo) {
+      this.undoBtn.disabled = !canUndo;
+      this.lastUndoState = canUndo;
+    }
+
+    // Only update redo button if its state has changed
+    if (this.lastRedoState !== canRedo) {
+      this.redoBtn.disabled = !canRedo;
+      this.lastRedoState = canRedo;
+    }
   }
 
   /**
