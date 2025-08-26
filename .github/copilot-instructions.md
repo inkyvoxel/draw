@@ -1,0 +1,5 @@
+- Use British English for all comments, documentation and frontend text (i.e. labels, buttons and messages).
+- Use American English for variable and function names.
+- Add a descriptive comment above every new method, explaining its purpose.
+- Follow Clean Code principles and existing code style and naming conventions.
+- Use Object-Oriented Programming principles where appropriate.
