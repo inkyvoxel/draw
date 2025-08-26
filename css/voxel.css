@@ -16,6 +16,7 @@
   justify-content: center;
   font-size: 1em;
   backface-visibility: hidden;
+  background-color: #5e2ee8;
 }
 
 .voxel {
