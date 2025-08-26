@@ -4,6 +4,18 @@ Draw is a single-page web application for drawing, built with native HTML, CSS, 
 
 Built with the assistance of LLMs. 🤖
 
+## Features
+
+- Touch and mouse input support
+- Pen tool for freehand drawing
+- Fill tool with flood fill algorithm
+- Adjustable brush size
+- Colour picker for brush and fill
+- Undo and redo with multi-level history
+- Clear canvas
+- High-DPI (Retina) display support
+- Responsive canvas resizing based on viewport
+
 ## Project Goals
 
 This projects strives for:
