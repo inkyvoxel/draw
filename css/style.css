@@ -87,3 +87,11 @@ button:disabled {
 button:disabled:hover {
   background: #ccc;
 }
+
+button.active {
+  background: #0066cc;
+}
+
+button.active:hover {
+  background: #0052a3;
+}

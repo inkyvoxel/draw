@@ -7,8 +7,11 @@ class DrawingApp {
     this.clearBtn = document.getElementById("clear");
     this.undoBtn = document.getElementById("undo");
     this.redoBtn = document.getElementById("redo");
+    this.penBtn = document.getElementById("pen");
+    this.fillBtn = document.getElementById("fill");
 
     this.drawing = false;
+    this.currentTool = "pen";
     this.lastPos = { x: 0, y: 0 };
     this.dpr = window.devicePixelRatio || 1;
 
@@ -24,13 +27,13 @@ class DrawingApp {
 
   setupEventListeners() {
     const drawEvents = [
-      { event: "mousedown", handler: this.handleDrawStart.bind(this) },
+      { event: "mousedown", handler: this.handlePointerDown.bind(this) },
       { event: "mousemove", handler: this.handleDrawMove.bind(this) },
       { event: "mouseup", handler: this.handleDrawEnd.bind(this) },
       { event: "mouseleave", handler: this.handleDrawEnd.bind(this) },
       {
         event: "touchstart",
-        handler: this.handleDrawStart.bind(this),
+        handler: this.handlePointerDown.bind(this),
         options: { passive: false },
       },
       {
@@ -49,6 +52,8 @@ class DrawingApp {
     this.clearBtn.addEventListener("click", this.handleClear.bind(this));
     this.undoBtn.addEventListener("click", this.handleUndo.bind(this));
     this.redoBtn.addEventListener("click", this.handleRedo.bind(this));
+    this.penBtn.addEventListener("click", this.selectPenTool.bind(this));
+    this.fillBtn.addEventListener("click", this.selectFillTool.bind(this));
     window.addEventListener("resize", this.resizeCanvas.bind(this));
   }
 
@@ -61,6 +66,16 @@ class DrawingApp {
       x: clientX - rect.left,
       y: clientY - rect.top,
     };
+  }
+
+  handlePointerDown(e) {
+    const pos = this.getPointerPosition(e);
+
+    if (this.currentTool === "fill") {
+      this.handleFill(pos);
+    } else {
+      this.handleDrawStart(e);
+    }
   }
 
   handleDrawStart(e) {
@@ -96,6 +111,110 @@ class DrawingApp {
     this.ctx.moveTo(from.x, from.y);
     this.ctx.lineTo(to.x, to.y);
     this.ctx.stroke();
+  }
+
+  toggleFillMode() {
+    this.fillMode = !this.fillMode;
+    this.fillBtn.classList.toggle("active", this.fillMode);
+    this.canvas.style.cursor = this.fillMode ? "crosshair" : "default";
+  }
+
+  selectPenTool() {
+    this.currentTool = "pen";
+    this.penBtn.classList.add("active");
+    this.fillBtn.classList.remove("active");
+    this.canvas.style.cursor = "default";
+  }
+
+  selectFillTool() {
+    this.currentTool = "fill";
+    this.fillBtn.classList.add("active");
+    this.penBtn.classList.remove("active");
+    this.canvas.style.cursor = "crosshair";
+  }
+
+  handleFill(pos) {
+    const x = Math.floor(pos.x * this.dpr);
+    const y = Math.floor(pos.y * this.dpr);
+
+    const targetColor = this.getPixelColor(x, y);
+    const fillColor = this.hexToRgba(this.colorPicker.value);
+
+    if (this.colorsEqual(targetColor, fillColor)) {
+      return;
+    }
+
+    this.floodFill(x, y, targetColor, fillColor);
+    this.history.saveState(this.canvas.toDataURL());
+    this.updateUI();
+  }
+
+  getPixelColor(x, y) {
+    const imageData = this.ctx.getImageData(x, y, 1, 1);
+    const data = imageData.data;
+    return {
+      r: data[0],
+      g: data[1],
+      b: data[2],
+      a: data[3],
+    };
+  }
+
+  hexToRgba(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return { r, g, b, a: 255 };
+  }
+
+  colorsEqual(color1, color2) {
+    return (
+      color1.r === color2.r &&
+      color1.g === color2.g &&
+      color1.b === color2.b &&
+      color1.a === color2.a
+    );
+  }
+
+  floodFill(startX, startY, targetColor, fillColor) {
+    const stack = [{ x: startX, y: startY }];
+    const imageData = this.ctx.getImageData(
+      0,
+      0,
+      this.canvas.width,
+      this.canvas.height
+    );
+    const data = imageData.data;
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+
+    while (stack.length > 0) {
+      const { x, y } = stack.pop();
+
+      if (x < 0 || x >= width || y < 0 || y >= height) continue;
+
+      const index = (y * width + x) * 4;
+      const currentColor = {
+        r: data[index],
+        g: data[index + 1],
+        b: data[index + 2],
+        a: data[index + 3],
+      };
+
+      if (!this.colorsEqual(currentColor, targetColor)) continue;
+
+      data[index] = fillColor.r;
+      data[index + 1] = fillColor.g;
+      data[index + 2] = fillColor.b;
+      data[index + 3] = fillColor.a;
+
+      stack.push({ x: x + 1, y });
+      stack.push({ x: x - 1, y });
+      stack.push({ x, y: y + 1 });
+      stack.push({ x, y: y - 1 });
+    }
+
+    this.ctx.putImageData(imageData, 0, 0);
   }
 
   handleClear() {
