@@ -1,7 +1,7 @@
 // Main class for the drawing application, handling all user interaction and canvas logic
 class DrawingApp {
   /**
-   * Initialises the drawing application, sets up DOM references and state.
+   * Initialises the drawing application, sets up DOM references, state, and optimised state saving system.
    * @constructor
    */
   constructor() {
@@ -22,6 +22,11 @@ class DrawingApp {
     this.dpr = window.devicePixelRatio || 1;
 
     this.history = new HistoryManager();
+
+    // State saving optimisation properties
+    this.pendingStateSave = false;
+    this.stateSaveTimeout = null;
+    this.stateSaveDelay = 300; // Delay in milliseconds for debouncing
 
     // Offscreen canvas to preserve the full drawing area
     this.offscreenCanvas = document.createElement("canvas");
@@ -102,11 +107,14 @@ class DrawingApp {
   }
 
   /**
-   * Handles the save button click, prompting the user to download the canvas as a PNG file.
+   * Handles the save button click, ensuring any pending saves are completed before prompting the user to download the canvas as a PNG file.
    * The filename is in the format Draw_YYYY_MM_DD_HH_MM_SS.png.
    * @returns {void}
    */
   handleSave() {
+    // Ensure any pending saves are completed before downloading
+    this.ensureStateSaved();
+
     const now = new Date();
     const pad = (n) => n.toString().padStart(2, "0");
     const timestamp = `${now.getFullYear()}_${pad(now.getMonth() + 1)}_${pad(
@@ -217,17 +225,69 @@ class DrawingApp {
   }
 
   /**
-   * Ends a drawing stroke and saves the current canvas state for undo/redo.
+   * Schedules a canvas state save with debouncing for drawing operations.
+   * Immediate saves for discrete actions, debounced saves for continuous drawing.
+   * @param {boolean} [immediate=false] - Whether to save immediately or use debouncing
+   * @returns {void}
+   */
+  scheduleStateSave(immediate = false) {
+    if (immediate) {
+      this.saveCanvasStateNow();
+      return;
+    }
+
+    // Cancel any pending save
+    if (this.stateSaveTimeout) {
+      clearTimeout(this.stateSaveTimeout);
+    }
+
+    this.pendingStateSave = true;
+    this.stateSaveTimeout = setTimeout(() => {
+      this.saveCanvasStateNow();
+    }, this.stateSaveDelay);
+  }
+
+  /**
+   * Immediately saves the current canvas state to history and updates UI.
+   * @returns {void}
+   */
+  saveCanvasStateNow() {
+    if (this.stateSaveTimeout) {
+      clearTimeout(this.stateSaveTimeout);
+      this.stateSaveTimeout = null;
+    }
+
+    this.pendingStateSave = false;
+
+    // Copy the visible canvas to the offscreen canvas
+    this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.offscreenCtx.drawImage(this.visibleCanvas, 0, 0);
+
+    // Save state to history
+    this.history.saveState(this.offscreenCanvas.toDataURL());
+    this.updateUI();
+  }
+
+  /**
+   * Ensures any pending state save is completed immediately.
+   * Used when switching tools or performing discrete actions.
+   * @returns {void}
+   */
+  ensureStateSaved() {
+    if (this.pendingStateSave) {
+      this.saveCanvasStateNow();
+    }
+  }
+
+  /**
+   * Ends a drawing stroke and schedules a debounced state save.
    * @returns {void}
    */
   handleDrawEnd() {
     if (this.drawing) {
       this.drawing = false;
-      // Copy the visible canvas to the offscreen canvas
-      this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
-      this.offscreenCtx.drawImage(this.visibleCanvas, 0, 0);
-      this.history.saveState(this.offscreenCanvas.toDataURL());
-      this.updateUI();
+      // Use debounced save for drawing strokes
+      this.scheduleStateSave(false);
     }
   }
 
@@ -270,10 +330,13 @@ class DrawingApp {
   }
 
   /**
-   * Selects the pen tool for freehand drawing.
+   * Selects the pen tool for freehand drawing, ensuring any pending saves are completed first.
    * @returns {void}
    */
   selectPenTool() {
+    // Ensure any pending saves are completed before switching tools
+    this.ensureStateSaved();
+
     this.currentTool = "pen";
     this.penBtn.classList.add("active");
     this.fillBtn.classList.remove("active");
@@ -281,10 +344,13 @@ class DrawingApp {
   }
 
   /**
-   * Selects the fill tool for flood fill operations.
+   * Selects the fill tool for flood fill operations, ensuring any pending saves are completed first.
    * @returns {void}
    */
   selectFillTool() {
+    // Ensure any pending saves are completed before switching tools
+    this.ensureStateSaved();
+
     this.currentTool = "fill";
     this.fillBtn.classList.add("active");
     this.penBtn.classList.remove("active");
@@ -334,7 +400,7 @@ class DrawingApp {
   }
 
   /**
-   * Performs the complete fill operation and updates history.
+   * Performs the complete fill operation and immediately saves state to history.
    * @param {{x: number, y: number}} position - The fill position
    * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
    * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
@@ -343,11 +409,8 @@ class DrawingApp {
    */
   performFillOperation(position, targetColor, fillColor, tolerance = 0) {
     this.floodFill(position.x, position.y, targetColor, fillColor, tolerance);
-    // Copy the visible canvas to the offscreen canvas after fill
-    this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
-    this.offscreenCtx.drawImage(this.visibleCanvas, 0, 0);
-    this.history.saveState(this.offscreenCanvas.toDataURL());
-    this.updateUI();
+    // Use immediate save for discrete fill actions
+    this.scheduleStateSave(true);
   }
 
   /**
@@ -610,7 +673,7 @@ class DrawingApp {
   }
 
   /**
-   * Clears the canvas and saves the cleared state to history.
+   * Clears the canvas and immediately saves the cleared state to history.
    * @returns {void}
    */
   handleClear() {
@@ -626,15 +689,18 @@ class DrawingApp {
       this.offscreenCanvas.width,
       this.offscreenCanvas.height
     );
-    this.history.saveState(this.offscreenCanvas.toDataURL());
-    this.updateUI();
+    // Use immediate save for discrete clear actions
+    this.scheduleStateSave(true);
   }
 
   /**
-   * Undoes the last action, restoring the previous canvas state.
+   * Undoes the last action, ensuring any pending saves are completed before restoring the previous canvas state.
    * @returns {Promise<void>}
    */
   async handleUndo() {
+    // Ensure any pending saves are completed before undo
+    this.ensureStateSaved();
+
     const state = this.history.undo();
     if (state) {
       await this.restoreCanvasState(state);
@@ -643,10 +709,13 @@ class DrawingApp {
   }
 
   /**
-   * Redoes the last undone action, restoring the next canvas state.
+   * Redoes the last undone action, ensuring any pending saves are completed before restoring the next canvas state.
    * @returns {Promise<void>}
    */
   async handleRedo() {
+    // Ensure any pending saves are completed before redo
+    this.ensureStateSaved();
+
     const state = this.history.redo();
     if (state) {
       await this.restoreCanvasState(state);
@@ -726,16 +795,16 @@ class DrawingApp {
   }
 
   /**
-   * Resizes the canvas to fit the available viewport space. If the size changes, updates the visible canvas from the offscreen canvas.
+   * Resizes the canvas to fit the available viewport space and updates the visible canvas from the offscreen canvas.
    * @returns {void}
    */
   async resizeCanvas() {
+    // Ensure any pending saves are completed before resizing
+    this.ensureStateSaved();
+
     const { width, height } = this.calculateCanvasSize();
-    const prevWidth = this.visibleCanvas.width;
-    const prevHeight = this.visibleCanvas.height;
     const newWidth = width * this.dpr;
     const newHeight = height * this.dpr;
-    const sizeChanged = prevWidth !== newWidth || prevHeight !== newHeight;
     this.setCanvasSize(width, height);
     this.setupCanvasContext();
     // If the offscreen canvas is smaller than the new size, expand it and copy old content
@@ -847,13 +916,13 @@ class DrawingApp {
   }
 
   /**
-   * Initialises the history with an empty canvas state if history is empty.
+   * Initialises the history with an empty canvas state if history is empty, using immediate save.
    * @returns {void}
    */
   initializeHistoryIfEmpty() {
     if (this.history.isEmpty()) {
-      this.history.saveState(this.offscreenCanvas.toDataURL());
-      this.updateUI();
+      // Use immediate save for initial state
+      this.scheduleStateSave(true);
     }
   }
 
