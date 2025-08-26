@@ -5,16 +5,9 @@ class DrawingApp {
    * @constructor
    */
   constructor() {
-    this.visibleCanvas = document.getElementById("draw-canvas");
+    // Validate and get DOM references with proper error handling
+    this.validateAndSetupDOMElements();
     this.visibleCtx = this.visibleCanvas.getContext("2d");
-    this.colorPicker = document.getElementById("color");
-    this.sizePicker = document.getElementById("size");
-    this.clearBtn = document.getElementById("clear");
-    this.undoBtn = document.getElementById("undo");
-    this.redoBtn = document.getElementById("redo");
-    this.penBtn = document.getElementById("pen");
-    this.fillBtn = document.getElementById("fill");
-    this.saveBtn = document.getElementById("save");
 
     this.drawing = false;
     this.currentTool = "pen";
@@ -35,10 +28,61 @@ class DrawingApp {
     // Offscreen canvas to preserve the full drawing area
     this.offscreenCanvas = document.createElement("canvas");
     this.offscreenCtx = this.offscreenCanvas.getContext("2d");
-    this.offscreenCanvas.width = this.visibleCanvas.width;
-    this.offscreenCanvas.height = this.visibleCanvas.height;
+
+    // Validate offscreen canvas context
+    if (!this.offscreenCtx) {
+      throw new Error("Failed to get 2D context for offscreen canvas");
+    }
+
+    // Note: Offscreen canvas dimensions will be set in resizeCanvas() after proper size calculation
 
     this.init();
+  }
+
+  /**
+   * Validates that all required DOM elements exist and sets up references.
+   * Throws descriptive errors if any required elements are missing.
+   * @returns {void}
+   * @throws {Error} If any required DOM element is not found
+   */
+  validateAndSetupDOMElements() {
+    const requiredElements = [
+      { id: "draw-canvas", name: "Canvas element", property: "visibleCanvas" },
+      { id: "color", name: "Colour picker", property: "colorPicker" },
+      { id: "size", name: "Size picker", property: "sizePicker" },
+      { id: "clear", name: "Clear button", property: "clearBtn" },
+      { id: "undo", name: "Undo button", property: "undoBtn" },
+      { id: "redo", name: "Redo button", property: "redoBtn" },
+      { id: "pen", name: "Pen button", property: "penBtn" },
+      { id: "fill", name: "Fill button", property: "fillBtn" },
+      { id: "save", name: "Save button", property: "saveBtn" },
+    ];
+
+    const missingElements = [];
+
+    // Check each required element and collect any missing ones
+    for (const element of requiredElements) {
+      const domElement = document.getElementById(element.id);
+      if (!domElement) {
+        missingElements.push(`${element.name} (ID: "${element.id}")`);
+      } else {
+        this[element.property] = domElement;
+      }
+    }
+
+    // If any elements are missing, throw a descriptive error
+    if (missingElements.length > 0) {
+      const errorMessage = `Drawing application cannot initialise. Missing required DOM elements:\n${missingElements.join(
+        "\n"
+      )}`;
+      throw new Error(errorMessage);
+    }
+
+    // Validate that canvas context is available
+    const tempCtx = this.visibleCanvas.getContext("2d");
+    if (!tempCtx) {
+      throw new Error("Failed to get 2D context for main canvas element");
+    }
   }
 
   /**
@@ -811,6 +855,34 @@ class DrawingApp {
   }
 
   /**
+   * Validates canvas dimensions to ensure they are positive and reasonable.
+   * @param {number} width - The width to validate
+   * @param {number} height - The height to validate
+   * @returns {{width: number, height: number}} Validated dimensions
+   */
+  validateCanvasDimensions(width, height) {
+    const minSize = 1;
+    const maxSize = 32767; // Maximum canvas size supported by most browsers
+
+    const validatedWidth = Math.max(
+      minSize,
+      Math.min(maxSize, Math.floor(width))
+    );
+    const validatedHeight = Math.max(
+      minSize,
+      Math.min(maxSize, Math.floor(height))
+    );
+
+    if (validatedWidth !== width || validatedHeight !== height) {
+      console.warn(
+        `Canvas dimensions adjusted from ${width}x${height} to ${validatedWidth}x${validatedHeight}`
+      );
+    }
+
+    return { width: validatedWidth, height: validatedHeight };
+  }
+
+  /**
    * Resizes the canvas to fit the available viewport space and updates the visible canvas from the offscreen canvas.
    * @returns {void}
    */
@@ -818,20 +890,37 @@ class DrawingApp {
     // Ensure any pending saves are completed before resizing
     this.ensureStateSaved();
 
-    const { width, height } = this.calculateCanvasSize();
+    const calculatedSize = this.calculateCanvasSize();
+    const validatedSize = this.validateCanvasDimensions(
+      calculatedSize.width,
+      calculatedSize.height
+    );
+    const { width, height } = validatedSize;
     const newWidth = width * this.dpr;
     const newHeight = height * this.dpr;
     this.setCanvasSize(width, height);
     this.setupCanvasContext();
-    // If the offscreen canvas is smaller than the new size, expand it and copy old content
-    if (
+    // Handle offscreen canvas sizing - initial setup or expansion
+    const needsResize =
       newWidth > this.offscreenCanvas.width ||
-      newHeight > this.offscreenCanvas.height
-    ) {
-      const oldOffscreen = document.createElement("canvas");
-      oldOffscreen.width = this.offscreenCanvas.width;
-      oldOffscreen.height = this.offscreenCanvas.height;
-      oldOffscreen.getContext("2d").drawImage(this.offscreenCanvas, 0, 0);
+      newHeight > this.offscreenCanvas.height ||
+      this.offscreenCanvas.width === 0 ||
+      this.offscreenCanvas.height === 0;
+
+    if (needsResize) {
+      // Save existing content if canvas has valid dimensions
+      const hasExistingContent =
+        this.offscreenCanvas.width > 0 && this.offscreenCanvas.height > 0;
+      let oldOffscreen = null;
+
+      if (hasExistingContent) {
+        oldOffscreen = document.createElement("canvas");
+        oldOffscreen.width = this.offscreenCanvas.width;
+        oldOffscreen.height = this.offscreenCanvas.height;
+        oldOffscreen.getContext("2d").drawImage(this.offscreenCanvas, 0, 0);
+      }
+
+      // Set new dimensions
       this.offscreenCanvas.width = Math.max(
         newWidth,
         this.offscreenCanvas.width
@@ -841,7 +930,11 @@ class DrawingApp {
         this.offscreenCanvas.height
       );
       this.offscreenCtx = this.offscreenCanvas.getContext("2d");
-      this.offscreenCtx.drawImage(oldOffscreen, 0, 0);
+
+      // Restore existing content if there was any
+      if (hasExistingContent && oldOffscreen) {
+        this.offscreenCtx.drawImage(oldOffscreen, 0, 0);
+      }
     }
     // Redraw the visible canvas from the offscreen canvas (cropped to fit)
     this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
