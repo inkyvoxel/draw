@@ -77,3 +77,13 @@ button {
 button:hover {
   background: #444;
 }
+
+button:disabled {
+  background: #ccc;
+  color: #999;
+  cursor: not-allowed;
+}
+
+button:disabled:hover {
+  background: #ccc;
+}
