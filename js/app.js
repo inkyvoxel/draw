@@ -1,7 +1,8 @@
 // Main class for the drawing application, handling all user interaction and canvas logic
 class DrawingApp {
   /**
-   * Initialises the drawing application, sets up DOM references and state
+   * Initialises the drawing application, sets up DOM references and state.
+   * @constructor
    */
   constructor() {
     this.canvas = document.getElementById("draw-canvas");
@@ -25,7 +26,8 @@ class DrawingApp {
   }
 
   /**
-   * Initialises event listeners and resizes the canvas on load
+   * Initialises event listeners and resizes the canvas on load.
+   * @returns {void}
    */
   init() {
     this.setupEventListeners();
@@ -33,7 +35,8 @@ class DrawingApp {
   }
 
   /**
-   * Sets up all event listeners for the drawing application
+   * Sets up all event listeners for the drawing application.
+   * @returns {void}
    */
   setupEventListeners() {
     this.setupCanvasDrawingEvents();
@@ -42,7 +45,8 @@ class DrawingApp {
   }
 
   /**
-   * Sets up mouse and touch events for drawing on the canvas
+   * Sets up mouse and touch events for drawing on the canvas.
+   * @returns {void}
    */
   setupCanvasDrawingEvents() {
     const drawEvents = this.getDrawingEventConfigurations();
@@ -53,7 +57,8 @@ class DrawingApp {
   }
 
   /**
-   * Returns the configuration for all drawing-related events
+   * Returns the configuration for all drawing-related events.
+   * @returns {Array<{event: string, handler: Function, options?: Object}>}
    */
   getDrawingEventConfigurations() {
     return [
@@ -77,7 +82,8 @@ class DrawingApp {
   }
 
   /**
-   * Sets up click events for all toolbar buttons
+   * Sets up click events for all toolbar buttons.
+   * @returns {void}
    */
   setupToolbarButtonEvents() {
     this.clearBtn.addEventListener("click", this.handleClear.bind(this));
@@ -88,14 +94,17 @@ class DrawingApp {
   }
 
   /**
-   * Sets up window-level events like resize
+   * Sets up window-level events such as resize.
+   * @returns {void}
    */
   setupWindowEvents() {
     window.addEventListener("resize", this.resizeCanvas.bind(this));
   }
 
   /**
-   * Gets the pointer (mouse or touch) position relative to the canvas
+   * Gets the pointer (mouse or touch) position relative to the canvas.
+   * @param {MouseEvent|TouchEvent} e - The pointer event
+   * @returns {{x: number, y: number}} The pointer position
    */
   getPointerPosition(e) {
     const rect = this.canvas.getBoundingClientRect();
@@ -109,7 +118,9 @@ class DrawingApp {
   }
 
   /**
-   * Handles pointer down event, switching between pen and fill tools
+   * Handles pointer down event, switching between pen and fill tools.
+   * @param {MouseEvent|TouchEvent} e - The pointer event
+   * @returns {void}
    */
   handlePointerDown(e) {
     const pos = this.getPointerPosition(e);
@@ -122,7 +133,9 @@ class DrawingApp {
   }
 
   /**
-   * Begins a drawing stroke
+   * Begins a drawing stroke.
+   * @param {MouseEvent|TouchEvent} e - The pointer event
+   * @returns {void}
    */
   handleDrawStart(e) {
     this.drawing = true;
@@ -130,7 +143,9 @@ class DrawingApp {
   }
 
   /**
-   * Handles pointer movement while drawing, draws lines as the pointer moves
+   * Handles pointer movement while drawing, draws lines as the pointer moves.
+   * @param {MouseEvent|TouchEvent} e - The pointer event
+   * @returns {void}
    */
   handleDrawMove(e) {
     if (!this.drawing) return;
@@ -143,7 +158,8 @@ class DrawingApp {
   }
 
   /**
-   * Ends a drawing stroke and saves the current canvas state for undo/redo
+   * Ends a drawing stroke and saves the current canvas state for undo/redo.
+   * @returns {void}
    */
   handleDrawEnd() {
     if (this.drawing) {
@@ -154,7 +170,10 @@ class DrawingApp {
   }
 
   /**
-   * Draws a line between two points with current brush settings
+   * Draws a line between two points with current brush settings.
+   * @param {{x: number, y: number}} from - The starting point
+   * @param {{x: number, y: number}} to - The ending point
+   * @returns {void}
    */
   drawLine(from, to) {
     this.configureBrushSettings();
@@ -162,7 +181,8 @@ class DrawingApp {
   }
 
   /**
-   * Configures the canvas context with current brush settings
+   * Configures the canvas context with current brush settings.
+   * @returns {void}
    */
   configureBrushSettings() {
     this.ctx.strokeStyle = this.colorPicker.value;
@@ -172,7 +192,10 @@ class DrawingApp {
   }
 
   /**
-   * Draws a single line segment between two points
+   * Draws a single line segment between two points.
+   * @param {{x: number, y: number}} from - The starting point
+   * @param {{x: number, y: number}} to - The ending point
+   * @returns {void}
    */
   drawLineSegment(from, to) {
     this.ctx.beginPath();
@@ -182,7 +205,8 @@ class DrawingApp {
   }
 
   /**
-   * Selects the pen tool for freehand drawing
+   * Selects the pen tool for freehand drawing.
+   * @returns {void}
    */
   selectPenTool() {
     this.currentTool = "pen";
@@ -192,7 +216,8 @@ class DrawingApp {
   }
 
   /**
-   * Selects the fill tool for flood fill operations
+   * Selects the fill tool for flood fill operations.
+   * @returns {void}
    */
   selectFillTool() {
     this.currentTool = "fill";
@@ -202,7 +227,9 @@ class DrawingApp {
   }
 
   /**
-   * Handles the fill tool operation at a specific position
+   * Handles the fill tool operation at a specific position.
+   * @param {{x: number, y: number}} pos - The position to fill
+   * @returns {void}
    */
   handleFill(pos) {
     const fillPosition = this.convertPositionToPixelCoordinates(pos);
@@ -217,7 +244,9 @@ class DrawingApp {
   }
 
   /**
-   * Converts screen position to pixel coordinates accounting for device pixel ratio
+   * Converts screen position to pixel co-ordinates accounting for device pixel ratio.
+   * @param {{x: number, y: number}} pos - The screen position
+   * @returns {{x: number, y: number}} The pixel co-ordinates
    */
   convertPositionToPixelCoordinates(pos) {
     return {
@@ -227,14 +256,21 @@ class DrawingApp {
   }
 
   /**
-   * Determines if fill operation should be skipped (when colors are the same)
+   * Determines if fill operation should be skipped (when colours are the same).
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @returns {boolean}
    */
   shouldSkipFill(targetColor, fillColor) {
     return this.colorsEqual(targetColor, fillColor);
   }
 
   /**
-   * Performs the complete fill operation and updates history
+   * Performs the complete fill operation and updates history.
+   * @param {{x: number, y: number}} position - The fill position
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @returns {void}
    */
   performFillOperation(position, targetColor, fillColor) {
     this.floodFill(position.x, position.y, targetColor, fillColor);
@@ -243,7 +279,10 @@ class DrawingApp {
   }
 
   /**
-   * Retrieves the RGBA colour of a pixel at (x, y) on the canvas
+   * Retrieves the RGBA colour of a pixel at (x, y) on the canvas.
+   * @param {number} x - The x co-ordinate
+   * @param {number} y - The y co-ordinate
+   * @returns {{r: number, g: number, b: number, a: number}} The pixel colour
    */
   getPixelColor(x, y) {
     const imageData = this.ctx.getImageData(x, y, 1, 1);
@@ -257,7 +296,9 @@ class DrawingApp {
   }
 
   /**
-   * Converts a hex colour string to an RGBA object
+   * Converts a hex colour string to an RGBA object.
+   * @param {string} hex - The hex colour string
+   * @returns {{r: number, g: number, b: number, a: number}} The RGBA colour
    */
   hexToRgba(hex) {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -267,7 +308,10 @@ class DrawingApp {
   }
 
   /**
-   * Compares two RGBA colour objects for equality
+   * Compares two RGBA colour objects for equality.
+   * @param {{r: number, g: number, b: number, a: number}} color1 - The first colour
+   * @param {{r: number, g: number, b: number, a: number}} color2 - The second colour
+   * @returns {boolean}
    */
   colorsEqual(color1, color2) {
     return (
@@ -279,7 +323,12 @@ class DrawingApp {
   }
 
   /**
-   * Performs flood fill algorithm to fill an area with the same color
+   * Performs flood fill algorithm to fill an area with the same colour.
+   * @param {number} startX - The starting x co-ordinate
+   * @param {number} startY - The starting y co-ordinate
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @returns {void}
    */
   floodFill(startX, startY, targetColor, fillColor) {
     const imageData = this.getCanvasImageData();
@@ -294,15 +343,22 @@ class DrawingApp {
   }
 
   /**
-   * Gets the complete image data from the canvas
+   * Gets the complete image data from the canvas.
+   * @returns {ImageData}
    */
   getCanvasImageData() {
     return this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
   }
 
   /**
-   * Creates the filled area using a stack-based flood fill algorithm
-   * Delegates stack processing and pixel checks to helper methods for clarity
+   * Creates the filled area using a stack-based flood fill algorithm.
+   * Delegates stack processing and pixel checks to helper methods for clarity.
+   * @param {number} startX - The starting x co-ordinate
+   * @param {number} startY - The starting y co-ordinate
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @param {ImageData} imageData - The image data
+   * @returns {void}
    */
   createFillArea(startX, startY, targetColor, fillColor, imageData) {
     const stack = [{ x: startX, y: startY }];
@@ -312,7 +368,14 @@ class DrawingApp {
   }
 
   /**
-   * Processes the stack for the flood fill, filling pixels as appropriate
+   * Processes the stack for the flood fill, filling pixels as appropriate.
+   * @param {Array<{x: number, y: number}>} stack - The stack of pixels
+   * @param {Uint8ClampedArray} data - The image data array
+   * @param {number} width - The canvas width
+   * @param {number} height - The canvas height
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @returns {void}
    */
   processFillStack(stack, data, width, height, targetColor, fillColor) {
     while (stack.length > 0) {
@@ -328,7 +391,13 @@ class DrawingApp {
   }
 
   /**
-   * Determines if a pixel is within bounds and matches the target colour
+   * Determines if a pixel is within bounds and matches the target colour.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {number} width - The canvas width
+   * @param {number} height - The canvas height
+   * @param {Uint8ClampedArray} data - The image data array
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @returns {boolean}
    */
   shouldFillPixel(pixel, width, height, data, targetColor) {
     if (this.isPixelOutOfBounds(pixel, width, height)) {
@@ -339,21 +408,34 @@ class DrawingApp {
   }
 
   /**
-   * Fills a single pixel with the specified fill colour
+   * Fills a single pixel with the specified fill colour.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {Uint8ClampedArray} data - The image data array
+   * @param {number} width - The canvas width
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @returns {void}
    */
   fillPixel(pixel, data, width, fillColor) {
     this.setPixelColor(pixel, fillColor, data, width);
   }
 
   /**
-   * Checks if a pixel coordinate is outside the canvas boundaries
+   * Checks if a pixel co-ordinate is outside the canvas boundaries.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {number} width - The canvas width
+   * @param {number} height - The canvas height
+   * @returns {boolean}
    */
   isPixelOutOfBounds(pixel, width, height) {
     return pixel.x < 0 || pixel.x >= width || pixel.y < 0 || pixel.y >= height;
   }
 
   /**
-   * Gets the color of a specific pixel from image data
+   * Gets the colour of a specific pixel from image data.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {Uint8ClampedArray} data - The image data array
+   * @param {number} width - The canvas width
+   * @returns {{r: number, g: number, b: number, a: number}} The pixel colour
    */
   getPixelColorFromImageData(pixel, data, width) {
     const index = (pixel.y * width + pixel.x) * 4;
@@ -366,7 +448,12 @@ class DrawingApp {
   }
 
   /**
-   * Sets the color of a specific pixel in the image data
+   * Sets the colour of a specific pixel in the image data.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {{r: number, g: number, b: number, a: number}} color - The colour
+   * @param {Uint8ClampedArray} data - The image data array
+   * @param {number} width - The canvas width
+   * @returns {void}
    */
   setPixelColor(pixel, color, data, width) {
     const index = (pixel.y * width + pixel.x) * 4;
@@ -377,7 +464,10 @@ class DrawingApp {
   }
 
   /**
-   * Adds the four neighboring pixels (up, down, left, right) to the processing stack
+   * Adds the four neighbouring pixels (up, down, left, right) to the processing stack.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {Array<{x: number, y: number}>} stack - The stack of pixels
+   * @returns {void}
    */
   addNeighboringPixelsToStack(pixel, stack) {
     stack.push({ x: pixel.x + 1, y: pixel.y });
@@ -387,14 +477,17 @@ class DrawingApp {
   }
 
   /**
-   * Applies the modified image data back to the canvas
+   * Applies the modified image data back to the canvas.
+   * @param {ImageData} imageData - The image data
+   * @returns {void}
    */
   applyFillToCanvas(imageData) {
     this.ctx.putImageData(imageData, 0, 0);
   }
 
   /**
-   * Clears the canvas and saves the cleared state to history
+   * Clears the canvas and saves the cleared state to history.
+   * @returns {void}
    */
   handleClear() {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -403,7 +496,8 @@ class DrawingApp {
   }
 
   /**
-   * Undoes the last action, restoring the previous canvas state
+   * Undoes the last action, restoring the previous canvas state.
+   * @returns {void}
    */
   handleUndo() {
     const state = this.history.undo();
@@ -414,7 +508,8 @@ class DrawingApp {
   }
 
   /**
-   * Redoes the last undone action, restoring the next canvas state
+   * Redoes the last undone action, restoring the next canvas state.
+   * @returns {void}
    */
   handleRedo() {
     const state = this.history.redo();
@@ -425,7 +520,9 @@ class DrawingApp {
   }
 
   /**
-   * Restores the canvas to a previous state from a data URL
+   * Restores the canvas to a previous state from a data URL.
+   * @param {string} dataURL - The data URL
+   * @returns {Promise<void>}
    */
   restoreCanvasState(dataURL) {
     return new Promise((resolve) => {
@@ -440,7 +537,9 @@ class DrawingApp {
   }
 
   /**
-   * Creates an Image object from a data URL
+   * Creates an Image object from a data URL.
+   * @param {string} dataURL - The data URL
+   * @returns {HTMLImageElement}
    */
   createImageFromDataURL(dataURL) {
     const img = new Image();
@@ -449,7 +548,8 @@ class DrawingApp {
   }
 
   /**
-   * Clears the canvas and resets the transformation matrix
+   * Clears the canvas and resets the transformation matrix.
+   * @returns {void}
    */
   clearCanvasAndResetTransform() {
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -457,21 +557,25 @@ class DrawingApp {
   }
 
   /**
-   * Draws the provided image onto the canvas
+   * Draws the provided image onto the canvas.
+   * @param {HTMLImageElement} img - The image to draw
+   * @returns {void}
    */
   drawImageToCanvas(img) {
     this.ctx.drawImage(img, 0, 0);
   }
 
   /**
-   * Applies device pixel ratio scaling to the canvas context
+   * Applies device pixel ratio scaling to the canvas context.
+   * @returns {void}
    */
   applyDevicePixelRatioScaling() {
     this.ctx.scale(this.dpr, this.dpr);
   }
 
   /**
-   * Updates the UI, enabling or disabling undo/redo buttons as appropriate
+   * Updates the UI, enabling or disabling undo/redo buttons as appropriate.
+   * @returns {void}
    */
   updateUI() {
     this.undoBtn.disabled = !this.history.canUndo();
@@ -479,7 +583,8 @@ class DrawingApp {
   }
 
   /**
-   * Resizes the canvas to fit the available viewport space
+   * Resizes the canvas to fit the available viewport space.
+   * @returns {void}
    */
   resizeCanvas() {
     const { width, height } = this.calculateCanvasSize();
@@ -489,7 +594,8 @@ class DrawingApp {
   }
 
   /**
-   * Calculates the optimal canvas size based on available viewport space
+   * Calculates the optimal canvas size based on available viewport space.
+   * @returns {{width: number, height: number}} The canvas size
    */
   calculateCanvasSize() {
     const { headerHeight, footerHeight } = this.getLayoutElementHeights();
@@ -503,7 +609,8 @@ class DrawingApp {
   }
 
   /**
-   * Gets the heights of header and footer elements for layout calculations
+   * Gets the heights of header and footer elements for layout calculations.
+   * @returns {{headerHeight: number, footerHeight: number}}
    */
   getLayoutElementHeights() {
     const header = document.querySelector("header");
@@ -516,7 +623,10 @@ class DrawingApp {
   }
 
   /**
-   * Sets the physical and visual dimensions of the canvas and its container
+   * Sets the physical and visual dimensions of the canvas and its container.
+   * @param {number} width - The width
+   * @param {number} height - The height
+   * @returns {void}
    */
   setCanvasSize(width, height) {
     this.setContainerDimensions(width, height);
@@ -524,7 +634,10 @@ class DrawingApp {
   }
 
   /**
-   * Sets the dimensions of the canvas container element
+   * Sets the dimensions of the canvas container element.
+   * @param {number} width - The width
+   * @param {number} height - The height
+   * @returns {void}
    */
   setContainerDimensions(width, height) {
     const container = this.canvas.parentElement;
@@ -533,7 +646,10 @@ class DrawingApp {
   }
 
   /**
-   * Sets the canvas dimensions accounting for device pixel ratio
+   * Sets the canvas dimensions accounting for device pixel ratio.
+   * @param {number} width - The width
+   * @param {number} height - The height
+   * @returns {void}
    */
   setCanvasDimensions(width, height) {
     this.canvas.width = width * this.dpr;
@@ -543,7 +659,8 @@ class DrawingApp {
   }
 
   /**
-   * Initializes the history with an empty canvas state if history is empty
+   * Initialises the history with an empty canvas state if history is empty.
+   * @returns {void}
    */
   initializeHistoryIfEmpty() {
     if (this.history.isEmpty()) {
@@ -553,7 +670,8 @@ class DrawingApp {
   }
 
   /**
-   * Sets up the canvas context transformation and scaling for high-DPI screens
+   * Sets up the canvas context transformation and scaling for high-DPI screens.
+   * @returns {void}
    */
   setupCanvasContext() {
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -564,7 +682,8 @@ class DrawingApp {
 // Manages the undo/redo history for the drawing application
 class HistoryManager {
   /**
-   * Initialises the history manager with a maximum number of states
+   * Initialises the history manager with a maximum number of states.
+   * @param {number} [maxStates=50] - The maximum number of states
    */
   constructor(maxStates = 50) {
     this.states = [];
@@ -573,7 +692,9 @@ class HistoryManager {
   }
 
   /**
-   * Saves a new canvas state to the history, trimming if necessary
+   * Saves a new canvas state to the history, trimming if necessary.
+   * @param {string} dataURL - The canvas state as a data URL
+   * @returns {void}
    */
   saveState(dataURL) {
     if (this.currentIndex < this.states.length - 1) {
@@ -590,7 +711,8 @@ class HistoryManager {
   }
 
   /**
-   * Moves one step back in the history and returns the previous state
+   * Moves one step back in the history and returns the previous state.
+   * @returns {string|null} The previous state or null if not available
    */
   undo() {
     if (this.canUndo()) {
@@ -601,7 +723,8 @@ class HistoryManager {
   }
 
   /**
-   * Moves one step forward in the history and returns the next state
+   * Moves one step forward in the history and returns the next state.
+   * @returns {string|null} The next state or null if not available
    */
   redo() {
     if (this.canRedo()) {
@@ -612,21 +735,24 @@ class HistoryManager {
   }
 
   /**
-   * Returns true if there is a previous state to undo to
+   * Returns true if there is a previous state to undo to.
+   * @returns {boolean}
    */
   canUndo() {
     return this.currentIndex > 0;
   }
 
   /**
-   * Returns true if there is a next state to redo to
+   * Returns true if there is a next state to redo to.
+   * @returns {boolean}
    */
   canRedo() {
     return this.currentIndex < this.states.length - 1;
   }
 
   /**
-   * Returns true if the history is empty
+   * Returns true if the history is empty.
+   * @returns {boolean}
    */
   isEmpty() {
     return this.states.length === 0;
