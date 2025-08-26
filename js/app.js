@@ -113,12 +113,6 @@ class DrawingApp {
     this.ctx.stroke();
   }
 
-  toggleFillMode() {
-    this.fillMode = !this.fillMode;
-    this.fillBtn.classList.toggle("active", this.fillMode);
-    this.canvas.style.cursor = this.fillMode ? "crosshair" : "default";
-  }
-
   selectPenTool() {
     this.currentTool = "pen";
     this.penBtn.classList.add("active");
