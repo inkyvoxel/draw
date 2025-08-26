@@ -136,6 +136,7 @@ class DrawingApp {
    * Gets the pointer (mouse or touch) position relative to the canvas.
    * Uses changedTouches[0] for 'touchend' and 'touchcancel', otherwise touches[0].
    * Falls back to mouse event properties if not a touch event.
+   * Rounds coordinates for pixel-perfect positioning on high-DPI screens.
    * @param {MouseEvent|TouchEvent} e - The pointer event
    * @returns {{x: number, y: number}} The pointer position
    */
@@ -168,9 +169,10 @@ class DrawingApp {
       clientY = e.clientY;
     }
 
+    // Round coordinates to ensure pixel-perfect positioning on high-DPI screens
     return {
-      x: clientX - rect.left,
-      y: clientY - rect.top,
+      x: Math.round(clientX - rect.left),
+      y: Math.round(clientY - rect.top),
     };
   }
 
@@ -241,12 +243,15 @@ class DrawingApp {
   }
 
   /**
-   * Configures the canvas context with current brush settings.
+   * Configures the canvas context with current brush settings, ensuring optimal rendering on high-DPI screens.
    * @returns {void}
    */
   configureBrushSettings() {
     this.visibleCtx.strokeStyle = this.colorPicker.value;
-    this.visibleCtx.lineWidth = Number(this.sizePicker.value);
+    // Ensure minimum line width for visibility on high-DPI screens
+    const baseLineWidth = Number(this.sizePicker.value);
+    const minLineWidth = 0.5; // Minimum width to ensure visibility
+    this.visibleCtx.lineWidth = Math.max(baseLineWidth, minLineWidth);
     this.visibleCtx.lineCap = "round";
     this.visibleCtx.lineJoin = "round";
   }
