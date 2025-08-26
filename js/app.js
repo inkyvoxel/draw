@@ -295,12 +295,14 @@ class DrawingApp {
     const fillPosition = this.convertPositionToPixelCoordinates(pos);
     const targetColor = this.getPixelColor(fillPosition.x, fillPosition.y);
     const fillColor = this.hexToRgba(this.colorPicker.value);
+    // Use a small tolerance for anti-aliased edges and transparent pixels
+    const tolerance = 1;
 
-    if (this.shouldSkipFill(targetColor, fillColor)) {
+    if (this.shouldSkipFill(targetColor, fillColor, tolerance)) {
       return;
     }
 
-    this.performFillOperation(fillPosition, targetColor, fillColor);
+    this.performFillOperation(fillPosition, targetColor, fillColor, tolerance);
   }
 
   /**
@@ -319,10 +321,11 @@ class DrawingApp {
    * Determines if fill operation should be skipped (when colours are the same).
    * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
    * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @param {number} [tolerance=0] - The tolerance for colour differences
    * @returns {boolean}
    */
-  shouldSkipFill(targetColor, fillColor) {
-    return this.colorsEqual(targetColor, fillColor);
+  shouldSkipFill(targetColor, fillColor, tolerance = 0) {
+    return this.colorsEqual(targetColor, fillColor, tolerance);
   }
 
   /**
@@ -330,10 +333,11 @@ class DrawingApp {
    * @param {{x: number, y: number}} position - The fill position
    * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
    * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @param {number} [tolerance=0] - The tolerance for colour differences
    * @returns {void}
    */
-  performFillOperation(position, targetColor, fillColor) {
-    this.floodFill(position.x, position.y, targetColor, fillColor);
+  performFillOperation(position, targetColor, fillColor, tolerance = 0) {
+    this.floodFill(position.x, position.y, targetColor, fillColor, tolerance);
     // Copy the visible canvas to the offscreen canvas after fill
     this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
     this.offscreenCtx.drawImage(this.visibleCanvas, 0, 0);
@@ -371,17 +375,29 @@ class DrawingApp {
   }
 
   /**
-   * Compares two RGBA colour objects for equality.
+   * Compares two RGBA colour objects for equality with tolerance for transparent pixels.
    * @param {{r: number, g: number, b: number, a: number}} color1 - The first colour
    * @param {{r: number, g: number, b: number, a: number}} color2 - The second colour
+   * @param {number} [tolerance=0] - The tolerance for colour differences (0-255)
    * @returns {boolean}
    */
-  colorsEqual(color1, color2) {
+  colorsEqual(color1, color2, tolerance = 0) {
+    // If both colours are fully transparent, consider them equal regardless of RGB
+    if (color1.a === 0 && color2.a === 0) {
+      return true;
+    }
+
+    // If one is transparent and the other isn't, they're different
+    if ((color1.a === 0) !== (color2.a === 0)) {
+      return false;
+    }
+
+    // For non-transparent pixels, check all channels with tolerance
     return (
-      color1.r === color2.r &&
-      color1.g === color2.g &&
-      color1.b === color2.b &&
-      color1.a === color2.a
+      Math.abs(color1.r - color2.r) <= tolerance &&
+      Math.abs(color1.g - color2.g) <= tolerance &&
+      Math.abs(color1.b - color2.b) <= tolerance &&
+      Math.abs(color1.a - color2.a) <= tolerance
     );
   }
 
@@ -391,16 +407,18 @@ class DrawingApp {
    * @param {number} startY - The starting y co-ordinate
    * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
    * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @param {number} [tolerance=0] - The tolerance for colour differences
    * @returns {void}
    */
-  floodFill(startX, startY, targetColor, fillColor) {
+  floodFill(startX, startY, targetColor, fillColor, tolerance = 0) {
     const imageData = this.getCanvasImageData();
     const fillArea = this.createFillArea(
       startX,
       startY,
       targetColor,
       fillColor,
-      imageData
+      imageData,
+      tolerance
     );
     this.applyFillToCanvas(imageData);
   }
@@ -426,13 +444,29 @@ class DrawingApp {
    * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
    * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
    * @param {ImageData} imageData - The image data
+   * @param {number} [tolerance=0] - The tolerance for colour differences
    * @returns {void}
    */
-  createFillArea(startX, startY, targetColor, fillColor, imageData) {
+  createFillArea(
+    startX,
+    startY,
+    targetColor,
+    fillColor,
+    imageData,
+    tolerance = 0
+  ) {
     const stack = [{ x: startX, y: startY }];
     const data = imageData.data;
     const { width, height } = this.visibleCanvas;
-    this.processFillStack(stack, data, width, height, targetColor, fillColor);
+    this.processFillStack(
+      stack,
+      data,
+      width,
+      height,
+      targetColor,
+      fillColor,
+      tolerance
+    );
   }
 
   /**
@@ -443,13 +477,29 @@ class DrawingApp {
    * @param {number} height - The canvas height
    * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
    * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @param {number} [tolerance=0] - The tolerance for colour differences
    * @returns {void}
    */
-  processFillStack(stack, data, width, height, targetColor, fillColor) {
+  processFillStack(
+    stack,
+    data,
+    width,
+    height,
+    targetColor,
+    fillColor,
+    tolerance = 0
+  ) {
     while (stack.length > 0) {
       const currentPixel = stack.pop();
       if (
-        !this.shouldFillPixel(currentPixel, width, height, data, targetColor)
+        !this.shouldFillPixel(
+          currentPixel,
+          width,
+          height,
+          data,
+          targetColor,
+          tolerance
+        )
       ) {
         continue;
       }
@@ -465,14 +515,15 @@ class DrawingApp {
    * @param {number} height - The canvas height
    * @param {Uint8ClampedArray} data - The image data array
    * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {number} [tolerance=0] - The tolerance for colour differences
    * @returns {boolean}
    */
-  shouldFillPixel(pixel, width, height, data, targetColor) {
+  shouldFillPixel(pixel, width, height, data, targetColor, tolerance = 0) {
     if (this.isPixelOutOfBounds(pixel, width, height)) {
       return false;
     }
     const pixelColor = this.getPixelColorFromImageData(pixel, data, width);
-    return this.colorsEqual(pixelColor, targetColor);
+    return this.colorsEqual(pixelColor, targetColor, tolerance);
   }
 
   /**
