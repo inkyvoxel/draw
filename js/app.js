@@ -14,6 +14,7 @@ class DrawingApp {
     this.redoBtn = document.getElementById("redo");
     this.penBtn = document.getElementById("pen");
     this.fillBtn = document.getElementById("fill");
+    this.saveBtn = document.getElementById("save");
 
     this.drawing = false;
     this.currentTool = "pen";
@@ -91,6 +92,30 @@ class DrawingApp {
     this.redoBtn.addEventListener("click", this.handleRedo.bind(this));
     this.penBtn.addEventListener("click", this.selectPenTool.bind(this));
     this.fillBtn.addEventListener("click", this.selectFillTool.bind(this));
+    this.saveBtn.addEventListener("click", this.handleSave.bind(this));
+  }
+
+  /**
+   * Handles the save button click, prompting the user to download the canvas as a PNG file.
+   * The filename is in the format Draw_YYYY_MM_DD_HH_MM_SS.png.
+   * @returns {void}
+   */
+  handleSave() {
+    const now = new Date();
+    const pad = (n) => n.toString().padStart(2, "0");
+    const timestamp = `${now.getFullYear()}_${pad(now.getMonth() + 1)}_${pad(
+      now.getDate()
+    )}_${pad(now.getHours())}_${pad(now.getMinutes())}_${pad(
+      now.getSeconds()
+    )}`;
+    const filename = `Draw_${timestamp}.png`;
+    const dataURL = this.canvas.toDataURL("image/png");
+    const link = document.createElement("a");
+    link.href = dataURL;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   /**

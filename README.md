@@ -13,6 +13,7 @@ Built with the assistance of LLMs. 🤖
 - Colour picker for brush and fill
 - Undo and redo with multi-level history
 - Clear canvas
+- Save your drawing as a PNG file with a timestamped filename
 - High-DPI (Retina) display support
 - Responsive canvas resizing based on viewport
 
