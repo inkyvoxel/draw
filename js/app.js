@@ -5,8 +5,8 @@ class DrawingApp {
    * @constructor
    */
   constructor() {
-    this.canvas = document.getElementById("draw-canvas");
-    this.ctx = this.canvas.getContext("2d");
+    this.visibleCanvas = document.getElementById("draw-canvas");
+    this.visibleCtx = this.visibleCanvas.getContext("2d");
     this.colorPicker = document.getElementById("color");
     this.sizePicker = document.getElementById("size");
     this.clearBtn = document.getElementById("clear");
@@ -22,6 +22,12 @@ class DrawingApp {
     this.dpr = window.devicePixelRatio || 1;
 
     this.history = new HistoryManager();
+
+    // Offscreen canvas to preserve the full drawing area
+    this.offscreenCanvas = document.createElement("canvas");
+    this.offscreenCtx = this.offscreenCanvas.getContext("2d");
+    this.offscreenCanvas.width = this.visibleCanvas.width;
+    this.offscreenCanvas.height = this.visibleCanvas.height;
 
     this.init();
   }
@@ -53,7 +59,7 @@ class DrawingApp {
     const drawEvents = this.getDrawingEventConfigurations();
 
     drawEvents.forEach(({ event, handler, options }) => {
-      this.canvas.addEventListener(event, handler, options);
+      this.visibleCanvas.addEventListener(event, handler, options);
     });
   }
 
@@ -109,7 +115,7 @@ class DrawingApp {
       now.getSeconds()
     )}`;
     const filename = `Draw_${timestamp}.png`;
-    const dataURL = this.canvas.toDataURL("image/png");
+    const dataURL = this.offscreenCanvas.toDataURL("image/png");
     const link = document.createElement("a");
     link.href = dataURL;
     link.download = filename;
@@ -128,16 +134,13 @@ class DrawingApp {
 
   /**
    * Gets the pointer (mouse or touch) position relative to the canvas.
+   * Uses changedTouches[0] for 'touchend' and 'touchcancel', otherwise touches[0].
+   * Falls back to mouse event properties if not a touch event.
    * @param {MouseEvent|TouchEvent} e - The pointer event
    * @returns {{x: number, y: number}} The pointer position
    */
   getPointerPosition(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    /**
-     * Determines the correct touch point for all touch event types.
-     * Uses changedTouches[0] for 'touchend' and 'touchcancel', otherwise touches[0].
-     * Falls back to mouse event properties if not a touch event.
-     */
+    const rect = this.visibleCanvas.getBoundingClientRect();
     let clientX, clientY;
     if (e.touches || e.changedTouches) {
       // Touch event
@@ -218,7 +221,10 @@ class DrawingApp {
   handleDrawEnd() {
     if (this.drawing) {
       this.drawing = false;
-      this.history.saveState(this.canvas.toDataURL());
+      // Copy the visible canvas to the offscreen canvas
+      this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
+      this.offscreenCtx.drawImage(this.visibleCanvas, 0, 0);
+      this.history.saveState(this.offscreenCanvas.toDataURL());
       this.updateUI();
     }
   }
@@ -239,10 +245,10 @@ class DrawingApp {
    * @returns {void}
    */
   configureBrushSettings() {
-    this.ctx.strokeStyle = this.colorPicker.value;
-    this.ctx.lineWidth = Number(this.sizePicker.value);
-    this.ctx.lineCap = "round";
-    this.ctx.lineJoin = "round";
+    this.visibleCtx.strokeStyle = this.colorPicker.value;
+    this.visibleCtx.lineWidth = Number(this.sizePicker.value);
+    this.visibleCtx.lineCap = "round";
+    this.visibleCtx.lineJoin = "round";
   }
 
   /**
@@ -252,10 +258,10 @@ class DrawingApp {
    * @returns {void}
    */
   drawLineSegment(from, to) {
-    this.ctx.beginPath();
-    this.ctx.moveTo(from.x, from.y);
-    this.ctx.lineTo(to.x, to.y);
-    this.ctx.stroke();
+    this.visibleCtx.beginPath();
+    this.visibleCtx.moveTo(from.x, from.y);
+    this.visibleCtx.lineTo(to.x, to.y);
+    this.visibleCtx.stroke();
   }
 
   /**
@@ -266,7 +272,7 @@ class DrawingApp {
     this.currentTool = "pen";
     this.penBtn.classList.add("active");
     this.fillBtn.classList.remove("active");
-    this.canvas.style.cursor = "default";
+    this.visibleCanvas.style.cursor = "default";
   }
 
   /**
@@ -277,7 +283,7 @@ class DrawingApp {
     this.currentTool = "fill";
     this.fillBtn.classList.add("active");
     this.penBtn.classList.remove("active");
-    this.canvas.style.cursor = "crosshair";
+    this.visibleCanvas.style.cursor = "crosshair";
   }
 
   /**
@@ -328,7 +334,10 @@ class DrawingApp {
    */
   performFillOperation(position, targetColor, fillColor) {
     this.floodFill(position.x, position.y, targetColor, fillColor);
-    this.history.saveState(this.canvas.toDataURL());
+    // Copy the visible canvas to the offscreen canvas after fill
+    this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.offscreenCtx.drawImage(this.visibleCanvas, 0, 0);
+    this.history.saveState(this.offscreenCanvas.toDataURL());
     this.updateUI();
   }
 
@@ -339,7 +348,7 @@ class DrawingApp {
    * @returns {{r: number, g: number, b: number, a: number}} The pixel colour
    */
   getPixelColor(x, y) {
-    const imageData = this.ctx.getImageData(x, y, 1, 1);
+    const imageData = this.visibleCtx.getImageData(x, y, 1, 1);
     const data = imageData.data;
     return {
       r: data[0],
@@ -401,7 +410,12 @@ class DrawingApp {
    * @returns {ImageData}
    */
   getCanvasImageData() {
-    return this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+    return this.visibleCtx.getImageData(
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
   }
 
   /**
@@ -417,7 +431,7 @@ class DrawingApp {
   createFillArea(startX, startY, targetColor, fillColor, imageData) {
     const stack = [{ x: startX, y: startY }];
     const data = imageData.data;
-    const { width, height } = this.canvas;
+    const { width, height } = this.visibleCanvas;
     this.processFillStack(stack, data, width, height, targetColor, fillColor);
   }
 
@@ -536,7 +550,7 @@ class DrawingApp {
    * @returns {void}
    */
   applyFillToCanvas(imageData) {
-    this.ctx.putImageData(imageData, 0, 0);
+    this.visibleCtx.putImageData(imageData, 0, 0);
   }
 
   /**
@@ -544,37 +558,48 @@ class DrawingApp {
    * @returns {void}
    */
   handleClear() {
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.history.saveState(this.canvas.toDataURL());
+    this.visibleCtx.clearRect(
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
+    this.offscreenCtx.clearRect(
+      0,
+      0,
+      this.offscreenCanvas.width,
+      this.offscreenCanvas.height
+    );
+    this.history.saveState(this.offscreenCanvas.toDataURL());
     this.updateUI();
   }
 
   /**
    * Undoes the last action, restoring the previous canvas state.
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  handleUndo() {
+  async handleUndo() {
     const state = this.history.undo();
     if (state) {
-      this.restoreCanvasState(state);
+      await this.restoreCanvasState(state);
       this.updateUI();
     }
   }
 
   /**
    * Redoes the last undone action, restoring the next canvas state.
-   * @returns {void}
+   * @returns {Promise<void>}
    */
-  handleRedo() {
+  async handleRedo() {
     const state = this.history.redo();
     if (state) {
-      this.restoreCanvasState(state);
+      await this.restoreCanvasState(state);
       this.updateUI();
     }
   }
 
   /**
-   * Restores the canvas to a previous state from a data URL.
+   * Restores the offscreen and visible canvas from a data URL.
    * @param {string} dataURL - The data URL
    * @returns {Promise<void>}
    */
@@ -582,8 +607,34 @@ class DrawingApp {
     return new Promise((resolve) => {
       const img = this.createImageFromDataURL(dataURL);
       img.onload = () => {
-        this.clearCanvasAndResetTransform();
-        this.drawImageToCanvas(img);
+        // Restore to offscreen canvas
+        this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
+        this.offscreenCtx.clearRect(
+          0,
+          0,
+          this.offscreenCanvas.width,
+          this.offscreenCanvas.height
+        );
+        this.offscreenCtx.drawImage(img, 0, 0);
+        // Restore to visible canvas (cropped)
+        this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
+        this.visibleCtx.clearRect(
+          0,
+          0,
+          this.visibleCanvas.width,
+          this.visibleCanvas.height
+        );
+        this.visibleCtx.drawImage(
+          this.offscreenCanvas,
+          0,
+          0,
+          this.visibleCanvas.width,
+          this.visibleCanvas.height,
+          0,
+          0,
+          this.visibleCanvas.width,
+          this.visibleCanvas.height
+        );
         this.applyDevicePixelRatioScaling();
         resolve();
       };
@@ -602,29 +653,11 @@ class DrawingApp {
   }
 
   /**
-   * Clears the canvas and resets the transformation matrix.
-   * @returns {void}
-   */
-  clearCanvasAndResetTransform() {
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-  }
-
-  /**
-   * Draws the provided image onto the canvas.
-   * @param {HTMLImageElement} img - The image to draw
-   * @returns {void}
-   */
-  drawImageToCanvas(img) {
-    this.ctx.drawImage(img, 0, 0);
-  }
-
-  /**
    * Applies device pixel ratio scaling to the canvas context.
    * @returns {void}
    */
   applyDevicePixelRatioScaling() {
-    this.ctx.scale(this.dpr, this.dpr);
+    this.visibleCtx.scale(this.dpr, this.dpr);
   }
 
   /**
@@ -637,13 +670,58 @@ class DrawingApp {
   }
 
   /**
-   * Resizes the canvas to fit the available viewport space.
+   * Resizes the canvas to fit the available viewport space. If the size changes, updates the visible canvas from the offscreen canvas.
    * @returns {void}
    */
-  resizeCanvas() {
+  async resizeCanvas() {
     const { width, height } = this.calculateCanvasSize();
+    const prevWidth = this.visibleCanvas.width;
+    const prevHeight = this.visibleCanvas.height;
+    const newWidth = width * this.dpr;
+    const newHeight = height * this.dpr;
+    const sizeChanged = prevWidth !== newWidth || prevHeight !== newHeight;
     this.setCanvasSize(width, height);
     this.setupCanvasContext();
+    // If the offscreen canvas is smaller than the new size, expand it and copy old content
+    if (
+      newWidth > this.offscreenCanvas.width ||
+      newHeight > this.offscreenCanvas.height
+    ) {
+      const oldOffscreen = document.createElement("canvas");
+      oldOffscreen.width = this.offscreenCanvas.width;
+      oldOffscreen.height = this.offscreenCanvas.height;
+      oldOffscreen.getContext("2d").drawImage(this.offscreenCanvas, 0, 0);
+      this.offscreenCanvas.width = Math.max(
+        newWidth,
+        this.offscreenCanvas.width
+      );
+      this.offscreenCanvas.height = Math.max(
+        newHeight,
+        this.offscreenCanvas.height
+      );
+      this.offscreenCtx = this.offscreenCanvas.getContext("2d");
+      this.offscreenCtx.drawImage(oldOffscreen, 0, 0);
+    }
+    // Redraw the visible canvas from the offscreen canvas (cropped to fit)
+    this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.visibleCtx.clearRect(
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
+    this.visibleCtx.drawImage(
+      this.offscreenCanvas,
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height,
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
+    this.applyDevicePixelRatioScaling();
     this.initializeHistoryIfEmpty();
   }
 
@@ -694,7 +772,7 @@ class DrawingApp {
    * @returns {void}
    */
   setContainerDimensions(width, height) {
-    const container = this.canvas.parentElement;
+    const container = this.visibleCanvas.parentElement;
     container.style.height = `${height}px`;
     container.style.width = `${width}px`;
   }
@@ -706,10 +784,10 @@ class DrawingApp {
    * @returns {void}
    */
   setCanvasDimensions(width, height) {
-    this.canvas.width = width * this.dpr;
-    this.canvas.height = height * this.dpr;
-    this.canvas.style.width = `${width}px`;
-    this.canvas.style.height = `${height}px`;
+    this.visibleCanvas.width = width * this.dpr;
+    this.visibleCanvas.height = height * this.dpr;
+    this.visibleCanvas.style.width = `${width}px`;
+    this.visibleCanvas.style.height = `${height}px`;
   }
 
   /**
@@ -718,7 +796,7 @@ class DrawingApp {
    */
   initializeHistoryIfEmpty() {
     if (this.history.isEmpty()) {
-      this.history.saveState(this.canvas.toDataURL());
+      this.history.saveState(this.offscreenCanvas.toDataURL());
       this.updateUI();
     }
   }
@@ -728,8 +806,8 @@ class DrawingApp {
    * @returns {void}
    */
   setupCanvasContext() {
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this.ctx.scale(this.dpr, this.dpr);
+    this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.visibleCtx.scale(this.dpr, this.dpr);
   }
 }
 
