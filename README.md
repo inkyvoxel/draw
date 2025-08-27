@@ -2,6 +2,8 @@
 
 Draw is a single-page web application for drawing, built with native HTML, CSS, and JavaScript. No third-party dependencies.
 
+You can view a demo [here](https://inkyvoxel.github.io/draw/).
+
 Built with the assistance of LLMs. 🤖
 
 ## Features
