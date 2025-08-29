@@ -5,7 +5,7 @@ class DrawingApp {
    * @constructor
    */
   constructor() {
-    // Validate and get DOM references with proper error handling
+    /** Validate and get DOM references with proper error handling */
     this.validateAndSetupDOMElements();
     this.visibleCtx = this.visibleCanvas.getContext("2d");
 
@@ -16,25 +16,24 @@ class DrawingApp {
 
     this.history = new HistoryManager();
 
-    // State saving optimisation properties
+    /** State saving optimisation properties */
     this.pendingStateSave = false;
     this.stateSaveTimeout = null;
-    this.stateSaveDelay = 300; // Delay in milliseconds for debouncing
+    /** @type {number} Delay in milliseconds for debouncing state saves to prevent excessive history entries */
+    this.stateSaveDelay = 300;
 
-    // UI state tracking for optimised updates
+    /** UI state tracking for optimised updates */
     this.lastUndoState = null;
     this.lastRedoState = null;
 
-    // Offscreen canvas to preserve the full drawing area
+    /** Offscreen canvas to preserve the full drawing area */
     this.offscreenCanvas = document.createElement("canvas");
     this.offscreenCtx = this.offscreenCanvas.getContext("2d");
 
-    // Validate offscreen canvas context
+    /** Validate offscreen canvas context */
     if (!this.offscreenCtx) {
       throw new Error("Failed to get 2D context for offscreen canvas");
     }
-
-    // Note: Offscreen canvas dimensions will be set in resizeCanvas() after proper size calculation
 
     this.init();
   }
@@ -46,7 +45,18 @@ class DrawingApp {
    * @throws {Error} If any required DOM element is not found
    */
   validateAndSetupDOMElements() {
-    const requiredElements = [
+    const requiredElements = this.getRequiredDOMElements();
+    this.validateDOMElements(requiredElements);
+    this.setupDOMReferences(requiredElements);
+    this.validateCanvasContext();
+  }
+
+  /**
+   * Returns the configuration of required DOM elements.
+   * @returns {Array<{id: string, name: string, property: string}>}
+   */
+  getRequiredDOMElements() {
+    return [
       { id: "draw-canvas", name: "Canvas element", property: "visibleCanvas" },
       { id: "color", name: "Colour picker", property: "colorPicker" },
       { id: "size", name: "Size picker", property: "sizePicker" },
@@ -57,28 +67,62 @@ class DrawingApp {
       { id: "fill", name: "Fill button", property: "fillBtn" },
       { id: "save", name: "Save button", property: "saveBtn" },
     ];
+  }
 
+  /**
+   * Validates that all required DOM elements exist.
+   * @param {Array<{id: string, name: string, property: string}>} elements - The elements to validate
+   * @returns {void}
+   * @throws {Error} If any required DOM element is not found
+   */
+  validateDOMElements(elements) {
     const missingElements = [];
 
-    // Check each required element and collect any missing ones
-    for (const element of requiredElements) {
+    /** Check each required element and collect any missing ones */
+    for (const element of elements) {
       const domElement = document.getElementById(element.id);
       if (!domElement) {
         missingElements.push(`${element.name} (ID: "${element.id}")`);
-      } else {
-        this[element.property] = domElement;
       }
     }
 
-    // If any elements are missing, throw a descriptive error
+    /** If any elements are missing, throw a descriptive error */
     if (missingElements.length > 0) {
-      const errorMessage = `Drawing application cannot initialise. Missing required DOM elements:\n${missingElements.join(
-        "\n"
-      )}`;
+      const errorMessage =
+        this.createMissingElementsErrorMessage(missingElements);
       throw new Error(errorMessage);
     }
+  }
 
-    // Validate that canvas context is available
+  /**
+   * Creates a descriptive error message for missing DOM elements.
+   * @param {string[]} missingElements - Array of missing element descriptions
+   * @returns {string} The error message
+   */
+  createMissingElementsErrorMessage(missingElements) {
+    return `Drawing application cannot initialise. Missing required DOM elements:\n${missingElements.join(
+      "\n"
+    )}`;
+  }
+
+  /**
+   * Sets up references to DOM elements.
+   * @param {Array<{id: string, name: string, property: string}>} elements - The elements to reference
+   * @returns {void}
+   */
+  setupDOMReferences(elements) {
+    for (const element of elements) {
+      this[element.property] = document.getElementById(element.id);
+    }
+  }
+
+  /**
+   * Validates that the canvas context is available.
+   * @returns {void}
+   * @throws {Error} If the canvas context cannot be obtained
+   */
+  validateCanvasContext() {
+    /** Validate that canvas context is available */
     const tempCtx = this.visibleCanvas.getContext("2d");
     if (!tempCtx) {
       throw new Error("Failed to get 2D context for main canvas element");
@@ -160,9 +204,19 @@ class DrawingApp {
    * @returns {void}
    */
   handleSave() {
-    // Ensure any pending saves are completed before downloading
+    /** Ensure any pending saves are completed before downloading */
     this.ensureStateSaved();
 
+    const filename = this.generateTimestampedFilename();
+    const dataURL = this.offscreenCanvas.toDataURL("image/png");
+    this.downloadDataURL(dataURL, filename);
+  }
+
+  /**
+   * Generates a timestamped filename for canvas exports.
+   * @returns {string} The filename in format "Draw_YYYY_MM_DD_HH_MM_SS.png"
+   */
+  generateTimestampedFilename() {
     const now = new Date();
     const pad = (n) => n.toString().padStart(2, "0");
     const timestamp = `${now.getFullYear()}_${pad(now.getMonth() + 1)}_${pad(
@@ -170,8 +224,16 @@ class DrawingApp {
     )}_${pad(now.getHours())}_${pad(now.getMinutes())}_${pad(
       now.getSeconds()
     )}`;
-    const filename = `Draw_${timestamp}.png`;
-    const dataURL = this.offscreenCanvas.toDataURL("image/png");
+    return `Draw_${timestamp}.png`;
+  }
+
+  /**
+   * Downloads a data URL as a file.
+   * @param {string} dataURL - The data URL to download
+   * @param {string} filename - The filename for the download
+   * @returns {void}
+   */
+  downloadDataURL(dataURL, filename) {
     const link = document.createElement("a");
     link.href = dataURL;
     link.download = filename;
@@ -198,37 +260,71 @@ class DrawingApp {
    */
   getPointerPosition(e) {
     const rect = this.visibleCanvas.getBoundingClientRect();
-    let clientX, clientY;
+    const clientPos = this.getClientPositionFromEvent(e);
+    return this.convertClientToCanvasPosition(clientPos, rect);
+  }
+
+  /**
+   * Extracts client coordinates from a mouse or touch event.
+   * @param {MouseEvent|TouchEvent} e - The pointer event
+   * @returns {{x: number, y: number}} The client coordinates
+   */
+  getClientPositionFromEvent(e) {
     if (e.touches || e.changedTouches) {
-      // Touch event
-      if (e.type === "touchend" || e.type === "touchcancel") {
-        if (e.changedTouches && e.changedTouches.length > 0) {
-          clientX = e.changedTouches[0].clientX;
-          clientY = e.changedTouches[0].clientY;
-        } else {
-          // Fallback: no touches left, use last known position (could be undefined)
-          clientX = 0;
-          clientY = 0;
-        }
+      return this.getTouchPosition(e);
+    } else {
+      return this.getMousePosition(e);
+    }
+  }
+
+  /**
+   * Extracts client coordinates from a touch event.
+   * @param {TouchEvent} e - The touch event
+   * @returns {{x: number, y: number}} The client coordinates
+   */
+  getTouchPosition(e) {
+    let clientX, clientY;
+    if (e.type === "touchend" || e.type === "touchcancel") {
+      if (e.changedTouches && e.changedTouches.length > 0) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
       } else {
-        if (e.touches && e.touches.length > 0) {
-          clientX = e.touches[0].clientX;
-          clientY = e.touches[0].clientY;
-        } else {
-          clientX = 0;
-          clientY = 0;
-        }
+        /** Fallback: no touches left, use last known position (could be undefined) */
+        clientX = 0;
+        clientY = 0;
       }
     } else {
-      // Mouse event
-      clientX = e.clientX;
-      clientY = e.clientY;
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = 0;
+        clientY = 0;
+      }
     }
+    return { x: clientX, y: clientY };
+  }
 
-    // Round coordinates to ensure pixel-perfect positioning on high-DPI screens
+  /**
+   * Extracts client coordinates from a mouse event.
+   * @param {MouseEvent} e - The mouse event
+   * @returns {{x: number, y: number}} The client coordinates
+   */
+  getMousePosition(e) {
+    return { x: e.clientX, y: e.clientY };
+  }
+
+  /**
+   * Converts client coordinates to canvas-relative coordinates.
+   * @param {{x: number, y: number}} clientPos - The client coordinates
+   * @param {DOMRect} rect - The canvas bounding rectangle
+   * @returns {{x: number, y: number}} The canvas coordinates
+   */
+  convertClientToCanvasPosition(clientPos, rect) {
+    /** Round coordinates to ensure pixel-perfect positioning on high-DPI screens */
     return {
-      x: Math.round(clientX - rect.left),
-      y: Math.round(clientY - rect.top),
+      x: Math.round(clientPos.x - rect.left),
+      y: Math.round(clientPos.y - rect.top),
     };
   }
 
@@ -284,7 +380,7 @@ class DrawingApp {
       return;
     }
 
-    // Cancel any pending save
+    /** Cancel any pending save */
     if (this.stateSaveTimeout) {
       clearTimeout(this.stateSaveTimeout);
     }
@@ -307,13 +403,29 @@ class DrawingApp {
 
     this.pendingStateSave = false;
 
-    // Copy the visible canvas to the offscreen canvas
+    this.copyVisibleToOffscreenCanvas();
+
+    /** Get ImageData from offscreen canvas for efficient storage */
+    const imageData = this.offscreenCtx.getImageData(
+      0,
+      0,
+      this.offscreenCanvas.width,
+      this.offscreenCanvas.height
+    );
+
+    /** Save state to history */
+    this.history.saveState(imageData);
+    this.updateUI();
+  }
+
+  /**
+   * Copies the visible canvas content to the offscreen canvas.
+   * @returns {void}
+   */
+  copyVisibleToOffscreenCanvas() {
+    /** Copy the visible canvas to the offscreen canvas */
     this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
     this.offscreenCtx.drawImage(this.visibleCanvas, 0, 0);
-
-    // Save state to history
-    this.history.saveState(this.offscreenCanvas.toDataURL());
-    this.updateUI();
   }
 
   /**
@@ -334,7 +446,7 @@ class DrawingApp {
   handleDrawEnd() {
     if (this.drawing) {
       this.drawing = false;
-      // Use debounced save for drawing strokes
+      /** Use debounced save for drawing strokes */
       this.scheduleStateSave(false);
     }
   }
@@ -356,9 +468,9 @@ class DrawingApp {
    */
   configureBrushSettings() {
     this.visibleCtx.strokeStyle = this.colorPicker.value;
-    // Ensure minimum line width for visibility on high-DPI screens
+    /** Ensure minimum line width for visibility on high-DPI screens */
+    const minLineWidth = 0.5;
     const baseLineWidth = Number(this.sizePicker.value);
-    const minLineWidth = 0.5; // Minimum width to ensure visibility
     this.visibleCtx.lineWidth = Math.max(baseLineWidth, minLineWidth);
     this.visibleCtx.lineCap = "round";
     this.visibleCtx.lineJoin = "round";
@@ -382,7 +494,7 @@ class DrawingApp {
    * @returns {void}
    */
   selectPenTool() {
-    // Ensure any pending saves are completed before switching tools
+    /** Ensure any pending saves are completed before switching tools */
     this.ensureStateSaved();
 
     this.currentTool = "pen";
@@ -396,7 +508,7 @@ class DrawingApp {
    * @returns {void}
    */
   selectFillTool() {
-    // Ensure any pending saves are completed before switching tools
+    /** Ensure any pending saves are completed before switching tools */
     this.ensureStateSaved();
 
     this.currentTool = "fill";
@@ -414,7 +526,7 @@ class DrawingApp {
     const fillPosition = this.convertPositionToPixelCoordinates(pos);
     const targetColor = this.getPixelColor(fillPosition.x, fillPosition.y);
     const fillColor = this.hexToRgba(this.colorPicker.value);
-    // Use a small tolerance for anti-aliased edges and transparent pixels
+    /** @type {number} Color tolerance for fill operations (0-255), helps with anti-aliased edges */
     const tolerance = 1;
 
     if (this.shouldSkipFill(targetColor, fillColor, tolerance)) {
@@ -457,7 +569,7 @@ class DrawingApp {
    */
   performFillOperation(position, targetColor, fillColor, tolerance = 0) {
     this.floodFill(position.x, position.y, targetColor, fillColor, tolerance);
-    // Use immediate save for discrete fill actions
+    /** Use immediate save for discrete fill actions */
     this.scheduleStateSave(true);
   }
 
@@ -737,7 +849,7 @@ class DrawingApp {
       this.offscreenCanvas.width,
       this.offscreenCanvas.height
     );
-    // Use immediate save for discrete clear actions
+    /** Use immediate save for discrete clear actions */
     this.scheduleStateSave(true);
   }
 
@@ -746,8 +858,7 @@ class DrawingApp {
    * @returns {Promise<void>}
    */
   async handleUndo() {
-    // Ensure any pending saves are completed before undo
-    this.ensureStateSaved();
+    this.clearPendingStateSaves();
 
     const state = this.history.undo();
     if (state) {
@@ -761,8 +872,7 @@ class DrawingApp {
    * @returns {Promise<void>}
    */
   async handleRedo() {
-    // Ensure any pending saves are completed before redo
-    this.ensureStateSaved();
+    this.clearPendingStateSaves();
 
     const state = this.history.redo();
     if (state) {
@@ -772,57 +882,78 @@ class DrawingApp {
   }
 
   /**
-   * Restores the offscreen and visible canvas from a data URL.
-   * @param {string} dataURL - The data URL
+   * Clears any pending state saves to prevent interference with undo/redo operations.
+   * @returns {void}
+   */
+  clearPendingStateSaves() {
+    if (this.stateSaveTimeout) {
+      clearTimeout(this.stateSaveTimeout);
+      this.stateSaveTimeout = null;
+    }
+    this.pendingStateSave = false;
+  }
+
+  /**
+   * Restores a canvas state from ImageData.
+   * @param {ImageData} imageData - The canvas state as ImageData
    * @returns {Promise<void>}
    */
-  restoreCanvasState(dataURL) {
+  restoreCanvasState(imageData) {
     return new Promise((resolve) => {
-      const img = this.createImageFromDataURL(dataURL);
-      img.onload = () => {
-        // Restore to offscreen canvas
-        this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
-        this.offscreenCtx.clearRect(
-          0,
-          0,
-          this.offscreenCanvas.width,
-          this.offscreenCanvas.height
-        );
-        this.offscreenCtx.drawImage(img, 0, 0);
-        // Restore to visible canvas (cropped)
-        this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
-        this.visibleCtx.clearRect(
-          0,
-          0,
-          this.visibleCanvas.width,
-          this.visibleCanvas.height
-        );
-        this.visibleCtx.drawImage(
-          this.offscreenCanvas,
-          0,
-          0,
-          this.visibleCanvas.width,
-          this.visibleCanvas.height,
-          0,
-          0,
-          this.visibleCanvas.width,
-          this.visibleCanvas.height
-        );
-        this.applyDevicePixelRatioScaling();
-        resolve();
-      };
+      this.clearOffscreenCanvas();
+      this.restoreImageDataToOffscreen(imageData);
+      this.copyOffscreenToVisibleCanvas();
+      this.applyDevicePixelRatioScaling();
+      resolve();
     });
   }
 
   /**
-   * Creates an Image object from a data URL.
-   * @param {string} dataURL - The data URL
-   * @returns {HTMLImageElement}
+   * Clears the offscreen canvas.
+   * @returns {void}
    */
-  createImageFromDataURL(dataURL) {
-    const img = new Image();
-    img.src = dataURL;
-    return img;
+  clearOffscreenCanvas() {
+    this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.offscreenCtx.clearRect(
+      0,
+      0,
+      this.offscreenCanvas.width,
+      this.offscreenCanvas.height
+    );
+  }
+
+  /**
+   * Restores ImageData to the offscreen canvas.
+   * @param {ImageData} imageData - The ImageData to restore
+   * @returns {void}
+   */
+  restoreImageDataToOffscreen(imageData) {
+    this.offscreenCtx.putImageData(imageData, 0, 0);
+  }
+
+  /**
+   * Copies the offscreen canvas content to the visible canvas.
+   * @returns {void}
+   */
+  copyOffscreenToVisibleCanvas() {
+    this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.visibleCtx.clearRect(
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
+    this.visibleCtx.drawImage(
+      this.offscreenCanvas,
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height,
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
   }
 
   /**
@@ -861,8 +992,10 @@ class DrawingApp {
    * @returns {{width: number, height: number}} Validated dimensions
    */
   validateCanvasDimensions(width, height) {
+    /** @type {number} Minimum canvas dimension in pixels */
     const minSize = 1;
-    const maxSize = 32767; // Maximum canvas size supported by most browsers
+    /** @type {number} Maximum canvas dimension in pixels supported by most browsers */
+    const maxSize = 32767;
 
     const validatedWidth = Math.max(
       minSize,
@@ -965,6 +1098,7 @@ class DrawingApp {
    */
   calculateCanvasSize() {
     const { headerHeight, footerHeight } = this.getLayoutElementHeights();
+    /** @type {number} Padding in pixels around the canvas for better visual spacing */
     const padding = 24;
 
     const availableHeight =
@@ -1055,30 +1189,85 @@ class HistoryManager {
     this.states = [];
     this.currentIndex = -1;
     this.maxStates = maxStates;
+    this.memoryUsage = 0;
+    /** @type {number} Maximum memory usage in bytes for storing canvas states (500MB) */
+    this.maxMemoryUsage = 500 * 1024 * 1024;
   }
 
   /**
    * Saves a new canvas state to the history, trimming if necessary.
-   * @param {string} dataURL - The canvas state as a data URL
+   * @param {ImageData} imageData - The canvas state as ImageData
    * @returns {void}
    */
-  saveState(dataURL) {
+  saveState(imageData) {
+    // Handle branching history (when user draws after undo)
     if (this.currentIndex < this.states.length - 1) {
-      this.states = this.states.slice(0, this.currentIndex + 1);
+      const removedStates = this.states.splice(this.currentIndex + 1);
+      removedStates.forEach((state) => {
+        this.memoryUsage -= this.calculateImageDataSize(state);
+      });
     }
 
-    this.states.push(dataURL);
-    this.currentIndex++;
+    // Calculate size of new state
+    const stateSize = this.calculateImageDataSize(imageData);
 
-    if (this.states.length > this.maxStates) {
-      this.states.shift();
+    // Check memory limit and trim if necessary
+    if (this.memoryUsage + stateSize > this.maxMemoryUsage) {
+      this.trimOldStates(stateSize);
+    }
+
+    // Add new state
+    this.states.push(imageData);
+    this.currentIndex++;
+    this.memoryUsage += stateSize;
+
+    // Only enforce maxStates if we're not already memory-limited
+    // This prevents unnecessary trimming when memory is the real constraint
+    const estimatedMaxStatesByMemory = Math.floor(
+      this.maxMemoryUsage / stateSize
+    );
+    const effectiveMaxStates = Math.min(
+      this.maxStates,
+      Math.max(10, estimatedMaxStatesByMemory)
+    );
+
+    if (this.states.length > effectiveMaxStates) {
+      const removedState = this.states.shift();
+      this.memoryUsage -= this.calculateImageDataSize(removedState);
+      this.currentIndex--;
+    }
+  }
+
+  /**
+   * Calculates the approximate memory usage of ImageData in bytes.
+   * @param {ImageData} imageData - The ImageData object
+   * @returns {number} Memory usage in bytes
+   */
+  calculateImageDataSize(imageData) {
+    /** ImageData uses 4 bytes per pixel (RGBA) */
+    return imageData.data.length;
+  }
+
+  /**
+   * Trims old states to make room for new state.
+   * @param {number} requiredSize - Size needed for new state
+   * @returns {void}
+   */
+  trimOldStates(requiredSize) {
+    /** Keep at least 2 states for undo functionality */
+    while (
+      this.states.length > 2 &&
+      this.memoryUsage + requiredSize > this.maxMemoryUsage
+    ) {
+      const removedState = this.states.shift();
+      this.memoryUsage -= this.calculateImageDataSize(removedState);
       this.currentIndex--;
     }
   }
 
   /**
    * Moves one step back in the history and returns the previous state.
-   * @returns {string|null} The previous state or null if not available
+   * @returns {ImageData|null} The previous state or null if not available
    */
   undo() {
     if (this.canUndo()) {
@@ -1090,7 +1279,7 @@ class HistoryManager {
 
   /**
    * Moves one step forward in the history and returns the next state.
-   * @returns {string|null} The next state or null if not available
+   * @returns {ImageData|null} The next state or null if not available
    */
   redo() {
     if (this.canRedo()) {
@@ -1122,6 +1311,14 @@ class HistoryManager {
    */
   isEmpty() {
     return this.states.length === 0;
+  }
+
+  /**
+   * Gets current memory usage in MB.
+   * @returns {number} Memory usage in MB
+   */
+  getMemoryUsageMB() {
+    return Math.round((this.memoryUsage / (1024 * 1024)) * 100) / 100;
   }
 }
 
