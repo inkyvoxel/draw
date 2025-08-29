@@ -631,6 +631,7 @@ class DrawingApp {
 
   /**
    * Performs flood fill algorithm to fill an area with the same colour.
+   * Uses bounding box optimization to only process affected regions.
    * @param {number} startX - The starting x co-ordinate
    * @param {number} startY - The starting y co-ordinate
    * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
@@ -639,16 +640,33 @@ class DrawingApp {
    * @returns {void}
    */
   floodFill(startX, startY, targetColor, fillColor, tolerance = 0) {
-    const imageData = this.getCanvasImageData();
+    // Initialize bounding box to track filled area
+    const boundingBox = {
+      minX: startX,
+      maxX: startX,
+      minY: startY,
+      maxY: startY,
+    };
+
+    // Get image data for the entire canvas initially
+    const fullImageData = this.getCanvasImageData();
     const fillArea = this.createFillArea(
       startX,
       startY,
       targetColor,
       fillColor,
-      imageData,
-      tolerance
+      fullImageData,
+      tolerance,
+      boundingBox
     );
-    this.applyFillToCanvas(imageData);
+
+    // Only update the affected region if bounding box is valid
+    if (
+      boundingBox.minX <= boundingBox.maxX &&
+      boundingBox.minY <= boundingBox.maxY
+    ) {
+      this.applyFillToCanvasRegion(fullImageData, boundingBox);
+    }
   }
 
   /**
@@ -673,6 +691,7 @@ class DrawingApp {
    * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
    * @param {ImageData} imageData - The image data
    * @param {number} [tolerance=0] - The tolerance for colour differences
+   * @param {{minX: number, maxX: number, minY: number, maxY: number}} boundingBox - The bounding box to update
    * @returns {void}
    */
   createFillArea(
@@ -681,7 +700,8 @@ class DrawingApp {
     targetColor,
     fillColor,
     imageData,
-    tolerance = 0
+    tolerance = 0,
+    boundingBox
   ) {
     const stack = [{ x: startX, y: startY }];
     const data = imageData.data;
@@ -693,7 +713,8 @@ class DrawingApp {
       height,
       targetColor,
       fillColor,
-      tolerance
+      tolerance,
+      boundingBox
     );
   }
 
@@ -706,6 +727,7 @@ class DrawingApp {
    * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
    * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
    * @param {number} [tolerance=0] - The tolerance for colour differences
+   * @param {{minX: number, maxX: number, minY: number, maxY: number}} boundingBox - The bounding box to update
    * @returns {void}
    */
   processFillStack(
@@ -715,7 +737,8 @@ class DrawingApp {
     height,
     targetColor,
     fillColor,
-    tolerance = 0
+    tolerance = 0,
+    boundingBox
   ) {
     while (stack.length > 0) {
       const currentPixel = stack.pop();
@@ -732,6 +755,13 @@ class DrawingApp {
         continue;
       }
       this.fillPixel(currentPixel, data, width, fillColor);
+
+      // Update bounding box
+      boundingBox.minX = Math.min(boundingBox.minX, currentPixel.x);
+      boundingBox.maxX = Math.max(boundingBox.maxX, currentPixel.x);
+      boundingBox.minY = Math.min(boundingBox.minY, currentPixel.y);
+      boundingBox.maxY = Math.max(boundingBox.maxY, currentPixel.y);
+
       this.addNeighboringPixelsToStack(currentPixel, stack);
     }
   }
@@ -824,7 +854,45 @@ class DrawingApp {
   }
 
   /**
-   * Applies the modified image data back to the canvas.
+   * Applies the modified image data back to the canvas for a specific region.
+   * @param {ImageData} imageData - The image data
+   * @param {{minX: number, maxX: number, minY: number, maxY: number}} boundingBox - The bounding box of the region to update
+   * @returns {void}
+   */
+  applyFillToCanvasRegion(imageData, boundingBox) {
+    const regionWidth = boundingBox.maxX - boundingBox.minX + 1;
+    const regionHeight = boundingBox.maxY - boundingBox.minY + 1;
+
+    // Create a new ImageData for just the affected region
+    const regionImageData = new ImageData(regionWidth, regionHeight);
+    const fullData = imageData.data;
+    const regionData = regionImageData.data;
+    const fullWidth = this.visibleCanvas.width;
+
+    // Copy the affected region from the full image data
+    for (let y = boundingBox.minY; y <= boundingBox.maxY; y++) {
+      for (let x = boundingBox.minX; x <= boundingBox.maxX; x++) {
+        const fullIndex = (y * fullWidth + x) * 4;
+        const regionIndex =
+          ((y - boundingBox.minY) * regionWidth + (x - boundingBox.minX)) * 4;
+
+        regionData[regionIndex] = fullData[fullIndex]; // R
+        regionData[regionIndex + 1] = fullData[fullIndex + 1]; // G
+        regionData[regionIndex + 2] = fullData[fullIndex + 2]; // B
+        regionData[regionIndex + 3] = fullData[fullIndex + 3]; // A
+      }
+    }
+
+    // Put only the affected region back to the canvas
+    this.visibleCtx.putImageData(
+      regionImageData,
+      boundingBox.minX,
+      boundingBox.minY
+    );
+  }
+
+  /**
+   * Applies the modified image data back to the entire canvas.
    * @param {ImageData} imageData - The image data
    * @returns {void}
    */
