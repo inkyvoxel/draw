@@ -59,9 +59,17 @@ class DrawingConfig {
 class DrawingApp {
   /**
    * Initialises the drawing application, sets up DOM references, and instantiates manager classes.
+   * @param {Object} [dependencies={}] - Optional dependencies for dependency injection
+   * @param {CanvasManager} [dependencies.canvasManager] - Custom canvas manager
+   * @param {EventHandler} [dependencies.eventHandler] - Custom event handler
+   * @param {FloodFillEngine} [dependencies.floodFillEngine] - Custom flood fill engine
+   * @param {DrawingEngine} [dependencies.drawingEngine] - Custom drawing engine
+   * @param {ToolManager} [dependencies.toolManager] - Custom tool manager
+   * @param {HistoryManager} [dependencies.historyManager] - Custom history manager
+   * @param {StateManager} [dependencies.stateManager] - Custom state manager
    * @constructor
    */
-  constructor() {
+  constructor(dependencies = {}) {
     /** Validate and get DOM references with proper error handling */
     this.validateAndSetupDOMElements();
     this.visibleCtx = this.visibleCanvas.getContext("2d");
@@ -73,43 +81,47 @@ class DrawingApp {
       DrawingConfig.DEFAULTS.DEFAULT_DEVICE_PIXEL_RATIO;
 
     /** Canvas manager for canvas operations */
-    this.canvasManager = new CanvasManager(this.visibleCanvas, this.dpr);
+    this.canvasManager =
+      dependencies.canvasManager ||
+      new CanvasManager(this.visibleCanvas, this.dpr);
 
     /** Event handler for DOM event management */
-    this.eventHandler = new EventHandler(this);
+    this.eventHandler = dependencies.eventHandler || new EventHandler(this);
 
     /** Flood fill engine for fill operations */
-    this.floodFillEngine = new FloodFillEngine();
+    this.floodFillEngine =
+      dependencies.floodFillEngine || new FloodFillEngine();
 
     /** Drawing engine for line and fill operations */
-    this.drawingEngine = new DrawingEngine(
-      this,
-      this.canvasManager,
-      this.floodFillEngine,
-      this.colorPicker,
-      this.sizePicker,
-      this.visibleCtx,
-      this.visibleCanvas
-    );
+    this.drawingEngine =
+      dependencies.drawingEngine ||
+      new DrawingEngine(
+        this,
+        this.canvasManager,
+        this.floodFillEngine,
+        this.colorPicker,
+        this.sizePicker,
+        this.visibleCtx,
+        this.visibleCanvas
+      );
 
     /** Tool manager for tool selection and UI updates */
-    this.toolManager = new ToolManager(
-      this,
-      this.penBtn,
-      this.fillBtn,
-      this.visibleCanvas
-    );
+    this.toolManager =
+      dependencies.toolManager ||
+      new ToolManager(this, this.penBtn, this.fillBtn, this.visibleCanvas);
 
-    this.history = new HistoryManager();
+    this.history = dependencies.historyManager || new HistoryManager();
 
     /** State manager for state saving and history coordination */
-    this.stateManager = new StateManager(
-      this,
-      this.canvasManager,
-      this.history,
-      this.undoBtn,
-      this.redoBtn
-    );
+    this.stateManager =
+      dependencies.stateManager ||
+      new StateManager(
+        this,
+        this.canvasManager,
+        this.history,
+        this.undoBtn,
+        this.redoBtn
+      );
 
     this.init();
   }
