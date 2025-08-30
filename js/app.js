@@ -10,7 +10,6 @@ class DrawingApp {
     this.visibleCtx = this.visibleCanvas.getContext("2d");
 
     this.drawing = false;
-    this.currentTool = "pen";
     this.lastPos = { x: 0, y: 0 };
     this.dpr = window.devicePixelRatio || 1;
 
@@ -31,6 +30,14 @@ class DrawingApp {
       this.colorPicker,
       this.sizePicker,
       this.visibleCtx,
+      this.visibleCanvas
+    );
+
+    /** Tool manager for tool selection and UI updates */
+    this.toolManager = new ToolManager(
+      this,
+      this.penBtn,
+      this.fillBtn,
       this.visibleCanvas
     );
 
@@ -201,7 +208,7 @@ class DrawingApp {
   handlePointerDown(e) {
     const pos = this.eventHandler.getPointerPosition(e);
 
-    if (this.currentTool === "fill") {
+    if (this.toolManager.getCurrentTool() === "fill") {
       this.handleFill(pos);
     } else {
       this.handleDrawStart(e);
@@ -321,13 +328,7 @@ class DrawingApp {
    * @returns {void}
    */
   selectPenTool() {
-    /** Ensure any pending saves are completed before switching tools */
-    this.ensureStateSaved();
-
-    this.currentTool = "pen";
-    this.penBtn.classList.add("active");
-    this.fillBtn.classList.remove("active");
-    this.visibleCanvas.style.cursor = "default";
+    this.toolManager.selectPenTool();
   }
 
   /**
@@ -335,13 +336,7 @@ class DrawingApp {
    * @returns {void}
    */
   selectFillTool() {
-    /** Ensure any pending saves are completed before switching tools */
-    this.ensureStateSaved();
-
-    this.currentTool = "fill";
-    this.fillBtn.classList.add("active");
-    this.penBtn.classList.remove("active");
-    this.visibleCanvas.style.cursor = "crosshair";
+    this.toolManager.selectFillTool();
   }
 
   /**
@@ -605,6 +600,78 @@ class HistoryManager {
    */
   getMemoryUsageMB() {
     return Math.round((this.memoryUsage / (1024 * 1024)) * 100) / 100;
+  }
+}
+
+// Manages tool selection and tool-specific behaviours
+class ToolManager {
+  /**
+   * Initialises the tool manager with required UI elements.
+   * @param {Object} drawingApp - The main drawing app instance
+   * @param {HTMLElement} penBtn - The pen tool button
+   * @param {HTMLElement} fillBtn - The fill tool button
+   * @param {HTMLCanvasElement} visibleCanvas - The visible canvas element
+   */
+  constructor(drawingApp, penBtn, fillBtn, visibleCanvas) {
+    this.drawingApp = drawingApp;
+    this.penBtn = penBtn;
+    this.fillBtn = fillBtn;
+    this.visibleCanvas = visibleCanvas;
+    this.currentTool = "pen";
+  }
+
+  /**
+   * Selects the pen tool for freehand drawing, ensuring any pending saves are completed first.
+   * @returns {void}
+   */
+  selectPenTool() {
+    /** Ensure any pending saves are completed before switching tools */
+    this.drawingApp.ensureStateSaved();
+
+    this.currentTool = "pen";
+    this.penBtn.classList.add("active");
+    this.fillBtn.classList.remove("active");
+    this.visibleCanvas.style.cursor = "default";
+  }
+
+  /**
+   * Selects the fill tool for flood fill operations, ensuring any pending saves are completed first.
+   * @returns {void}
+   */
+  selectFillTool() {
+    /** Ensure any pending saves are completed before switching tools */
+    this.drawingApp.ensureStateSaved();
+
+    this.currentTool = "fill";
+    this.fillBtn.classList.add("active");
+    this.penBtn.classList.remove("active");
+    this.visibleCanvas.style.cursor = "crosshair";
+  }
+
+  /**
+   * Gets the currently selected tool.
+   * @returns {string} The current tool name
+   */
+  getCurrentTool() {
+    return this.currentTool;
+  }
+
+  /**
+   * Selects a tool by name.
+   * @param {string} toolName - The tool name ('pen' or 'fill')
+   * @returns {void}
+   */
+  selectTool(toolName) {
+    switch (toolName) {
+      case "pen":
+        this.selectPenTool();
+        break;
+      case "fill":
+        this.selectFillTool();
+        break;
+      default:
+        console.warn(`Unknown tool: ${toolName}`);
+    }
   }
 }
 
