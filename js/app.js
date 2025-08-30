@@ -142,6 +142,8 @@ class DrawingApp {
    * @param {DrawingEngine} [dependencies.drawingEngine] - Custom drawing engine
    * @param {ToolManager} [dependencies.toolManager] - Custom tool manager
    * @param {HistoryManager} [dependencies.historyManager] - Custom history manager
+   * @param {MemoryManager} [dependencies.memoryManager] - Custom memory manager
+   * @param {LifecycleManager} [dependencies.lifecycleManager] - Custom lifecycle manager
    * @param {StateManager} [dependencies.stateManager] - Custom state manager
    * @constructor
    */
@@ -191,6 +193,15 @@ class DrawingApp {
 
     this.historyManager = dependencies.historyManager || new HistoryManager();
 
+    /** Memory manager for cleanup strategies */
+    this.memoryManager =
+      dependencies.memoryManager || new MemoryManager(this.historyManager);
+
+    /** Lifecycle manager for application lifecycle events */
+    this.lifecycleManager =
+      dependencies.lifecycleManager ||
+      new LifecycleManager(this, this.memoryManager);
+
     /** State manager for state saving and history coordination */
     this.stateManager =
       dependencies.stateManager ||
@@ -203,6 +214,7 @@ class DrawingApp {
       );
 
     this.setupEventListeners();
+    this.lifecycleManager.setupLifecycleEvents();
     this.init();
   }
 
@@ -890,8 +902,14 @@ class DrawingApp {
    */
   destroy() {
     try {
+      // Clean up lifecycle manager (removes lifecycle events and cancels memory cleanup)
+      this.lifecycleManager.cleanup();
+
       // Clean up state manager (clears timeouts)
       this.stateManager.cleanup();
+
+      // Clean up memory manager (cancels any pending cleanup)
+      this.memoryManager.cleanup();
 
       // Remove all event listeners from EventEmitter
       this.eventEmitter.removeAllListeners();
@@ -923,6 +941,8 @@ class DrawingApp {
     this.drawingEngine = null;
     this.toolManager = null;
     this.historyManager = null;
+    this.memoryManager = null;
+    this.lifecycleManager = null;
     this.stateManager = null;
     this.eventEmitter = null;
 
@@ -1910,6 +1930,186 @@ class FloodFillEngine {
   }
 }
 
+// Manages memory cleanup and optimisation strategies for the drawing application
+class MemoryManager {
+  /**
+   * Initialises the memory manager with required dependencies.
+   * @param {HistoryManager} historyManager - The history manager
+   */
+  constructor(historyManager) {
+    this.historyManager = historyManager;
+    this.memoryCleanupTimeout = null;
+  }
+
+  /**
+   * Schedules memory cleanup after the application has been inactive for an extended period.
+   * @returns {void}
+   */
+  scheduleCleanup() {
+    this.cancelScheduledCleanup();
+
+    this.memoryCleanupTimeout = setTimeout(() => {
+      this.performCleanupIfNeeded();
+    }, DrawingConfig.DEFAULTS.MEMORY_MONITOR_INTERVAL_MS);
+  }
+
+  /**
+   * Performs memory cleanup if usage exceeds threshold.
+   * @returns {void}
+   */
+  performCleanupIfNeeded() {
+    if (document.hidden) {
+      try {
+        const memoryUsage = this.historyManager.getMemoryUsagePercentage();
+        if (
+          memoryUsage > DrawingConfig.DEFAULTS.MEMORY_CLEANUP_THRESHOLD_PERCENT
+        ) {
+          console.debug("Performing memory cleanup due to extended inactivity");
+          this.historyManager.forceCleanup(
+            DrawingConfig.DEFAULTS.FORCE_CLEANUP_STATE_COUNT
+          );
+        }
+      } catch (error) {
+        console.error("Error during scheduled memory cleanup:", error);
+      }
+    }
+  }
+
+  /**
+   * Cancels any scheduled memory cleanup.
+   * @returns {void}
+   */
+  cancelScheduledCleanup() {
+    if (this.memoryCleanupTimeout) {
+      clearTimeout(this.memoryCleanupTimeout);
+      this.memoryCleanupTimeout = null;
+    }
+  }
+
+  /**
+   * Cleans up the memory manager.
+   * @returns {void}
+   */
+  cleanup() {
+    this.cancelScheduledCleanup();
+  }
+}
+
+// Manages application lifecycle events and coordinates appropriate responses
+class LifecycleManager {
+  /**
+   * Initialises the lifecycle manager.
+   * @param {DrawingApp} drawingApp - The drawing application
+   * @param {MemoryManager} memoryManager - The memory manager
+   */
+  constructor(drawingApp, memoryManager) {
+    this.drawingApp = drawingApp;
+    this.memoryManager = memoryManager;
+
+    this.boundHandlers = {
+      beforeUnload: this.handleBeforeUnload.bind(this),
+      unload: this.handleUnload.bind(this),
+      visibilityChange: this.handleVisibilityChange.bind(this),
+    };
+  }
+
+  /**
+   * Sets up lifecycle event listeners.
+   * @returns {void}
+   */
+  setupLifecycleEvents() {
+    window.addEventListener("beforeunload", this.boundHandlers.beforeUnload);
+    window.addEventListener("unload", this.boundHandlers.unload);
+    document.addEventListener(
+      "visibilitychange",
+      this.boundHandlers.visibilityChange
+    );
+  }
+
+  /**
+   * Handles the beforeunload event to ensure any pending saves are completed.
+   * @param {BeforeUnloadEvent} event - The beforeunload event
+   * @returns {void}
+   */
+  handleBeforeUnload(event) {
+    try {
+      this.drawingApp.stateManager.ensureStateSaved();
+
+      if (this.drawingApp.historyManager.states.length > 1) {
+        event.preventDefault();
+        event.returnValue =
+          "You have unsaved changes. Are you sure you want to leave?";
+        return event.returnValue;
+      }
+    } catch (error) {
+      console.error("Error during beforeunload:", error);
+    }
+  }
+
+  /**
+   * Handles the unload event to perform final cleanup.
+   * @returns {void}
+   */
+  handleUnload() {
+    try {
+      this.drawingApp.destroy();
+    } catch (error) {
+      console.debug("Cleanup completed during unload");
+    }
+  }
+
+  /**
+   * Handles page visibility changes for memory management.
+   * @returns {void}
+   */
+  handleVisibilityChange() {
+    try {
+      if (document.hidden) {
+        this.drawingApp.stateManager.ensureStateSaved();
+        this.memoryManager.scheduleCleanup();
+      } else {
+        this.memoryManager.cancelScheduledCleanup();
+        this.drawingApp.stateManager.updateUI();
+      }
+    } catch (error) {
+      console.error("Error handling visibility change:", error);
+    }
+  }
+
+  /**
+   * Removes all lifecycle event listeners.
+   * @returns {void}
+   */
+  removeLifecycleEvents() {
+    try {
+      this.memoryManager.cancelScheduledCleanup();
+
+      window.removeEventListener(
+        "beforeunload",
+        this.boundHandlers.beforeUnload
+      );
+      window.removeEventListener("unload", this.boundHandlers.unload);
+      document.removeEventListener(
+        "visibilitychange",
+        this.boundHandlers.visibilityChange
+      );
+
+      console.debug("Lifecycle events cleanup completed");
+    } catch (error) {
+      console.error("Error removing lifecycle events:", error);
+    }
+  }
+
+  /**
+   * Cleans up the lifecycle manager.
+   * @returns {void}
+   */
+  cleanup() {
+    this.removeLifecycleEvents();
+    this.memoryManager.cleanup();
+  }
+}
+
 // Manages all DOM event setup and delegation
 class EventHandler {
   /**
@@ -1919,15 +2119,9 @@ class EventHandler {
   constructor(drawingApp) {
     this.drawingApp = drawingApp;
     this.visibleCanvas = drawingApp.visibleCanvas;
-    this.memoryCleanupTimeout = null;
 
     // Store bound event handlers for proper cleanup
     this.boundHandlers = {
-      // Lifecycle events
-      beforeUnload: this.handleBeforeUnload.bind(this),
-      unload: this.handleUnload.bind(this),
-      visibilityChange: this.handleVisibilityChange.bind(this),
-
       // Drawing app events
       handlePointerDown: this.drawingApp.handlePointerDown.bind(
         this.drawingApp
@@ -2045,137 +2239,12 @@ class EventHandler {
   }
 
   /**
-   * Sets up window-level events such as resize and lifecycle events.
+   * Sets up window-level events such as resize.
    * @returns {void}
    */
   setupWindowEvents() {
     // Canvas resize handling
     window.addEventListener("resize", this.boundHandlers.resizeCanvas);
-
-    // Lifecycle cleanup events
-    this.setupLifecycleEvents();
-  }
-
-  /**
-   * Sets up browser lifecycle events for proper cleanup.
-   * @returns {void}
-   */
-  setupLifecycleEvents() {
-    // Clean up when user is about to leave the page
-    window.addEventListener("beforeunload", this.boundHandlers.beforeUnload);
-
-    // Clean up when page is being unloaded
-    window.addEventListener("unload", this.boundHandlers.unload);
-
-    // Handle page visibility changes for memory management
-    document.addEventListener(
-      "visibilitychange",
-      this.boundHandlers.visibilityChange
-    );
-  }
-
-  /**
-   * Handles the beforeunload event to ensure any pending saves are completed.
-   * @param {BeforeUnloadEvent} event - The beforeunload event
-   * @returns {void}
-   */
-  handleBeforeUnload(event) {
-    try {
-      // Ensure any pending state saves are completed
-      this.drawingApp.ensureStateSaved();
-
-      // If there are unsaved changes, warn the user
-      if (this.drawingApp.historyManager.states.length > 1) {
-        event.preventDefault();
-        // Modern browsers ignore custom messages, but setting returnValue is still required
-        event.returnValue =
-          "You have unsaved changes. Are you sure you want to leave?";
-        return event.returnValue;
-      }
-    } catch (error) {
-      console.error("Error during beforeunload:", error);
-    }
-  }
-
-  /**
-   * Handles the unload event to perform final cleanup.
-   * @returns {void}
-   */
-  handleUnload() {
-    try {
-      // Perform final cleanup
-      this.drawingApp.destroy();
-    } catch (error) {
-      // Silent fail during unload to avoid console errors
-      console.debug("Cleanup completed during unload");
-    }
-  }
-
-  /**
-   * Handles page visibility changes for memory management.
-   * @returns {void}
-   */
-  handleVisibilityChange() {
-    try {
-      if (document.hidden) {
-        // Page is now hidden - ensure any pending saves are completed
-        this.drawingApp.ensureStateSaved();
-
-        // Set up memory cleanup after extended hidden period
-        this.scheduleMemoryCleanup();
-      } else {
-        // Page is now visible - cancel any scheduled cleanup
-        this.cancelScheduledCleanup();
-
-        // Update UI states in case anything changed while hidden
-        this.drawingApp.updateHistoryButtonStates();
-      }
-    } catch (error) {
-      console.error("Error handling visibility change:", error);
-    }
-  }
-
-  /**
-   * Schedules memory cleanup after the page has been hidden for an extended period.
-   * @returns {void}
-   */
-  scheduleMemoryCleanup() {
-    // Cancel any existing cleanup timeout
-    this.cancelScheduledCleanup();
-
-    // Schedule cleanup after certain amount of time of being hidden
-    this.memoryCleanupTimeout = setTimeout(() => {
-      if (document.hidden) {
-        try {
-          const memoryUsage =
-            this.drawingApp.historyManager.getMemoryUsagePercentage();
-          if (
-            memoryUsage >
-            DrawingConfig.DEFAULTS.MEMORY_CLEANUP_THRESHOLD_PERCENT
-          ) {
-            console.debug(
-              "Performing memory cleanup due to extended inactivity"
-            );
-            this.drawingApp.historyManager.forceCleanup(
-              DrawingConfig.DEFAULTS.FORCE_CLEANUP_STATE_COUNT
-            );
-          }
-        } catch (error) {
-          console.error("Error during scheduled memory cleanup:", error);
-        }
-      }
-    }, DrawingConfig.DEFAULTS.MEMORY_MONITOR_INTERVAL_MS); // e.g., 5 minutes
-  }
-
-  /**
-   * Cancels any scheduled memory cleanup.
-   * @returns {void}
-   */
-  cancelScheduledCleanup() {
-    if (this.memoryCleanupTimeout) {
-      clearTimeout(this.memoryCleanupTimeout);
-      this.memoryCleanupTimeout = null;
-    }
   }
 
   /**
@@ -2309,38 +2378,9 @@ class EventHandler {
       // Remove window resize event
       window.removeEventListener("resize", this.boundHandlers.resizeCanvas);
 
-      // Remove lifecycle events
-      this.removeLifecycleEvents();
-
       console.debug("All DOM event listeners removed");
     } catch (error) {
       console.error("Error removing event listeners:", error);
-    }
-  }
-
-  /**
-   * Removes all lifecycle event listeners and cancels any scheduled cleanups.
-   * @returns {void}
-   */
-  removeLifecycleEvents() {
-    try {
-      // Cancel any scheduled memory cleanup
-      this.cancelScheduledCleanup();
-
-      // Remove lifecycle event listeners using stored bound handlers
-      window.removeEventListener(
-        "beforeunload",
-        this.boundHandlers.beforeUnload
-      );
-      window.removeEventListener("unload", this.boundHandlers.unload);
-      document.removeEventListener(
-        "visibilitychange",
-        this.boundHandlers.visibilityChange
-      );
-
-      console.debug("Lifecycle events cleanup completed");
-    } catch (error) {
-      console.error("Error removing lifecycle events:", error);
     }
   }
 }
