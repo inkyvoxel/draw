@@ -17,6 +17,12 @@ class DrawingApp {
     /** Canvas manager for canvas operations */
     this.canvasManager = new CanvasManager(this.visibleCanvas, this.dpr);
 
+    /** Event handler for DOM event management */
+    this.eventHandler = new EventHandler(this);
+
+    /** Flood fill engine for fill operations */
+    this.floodFillEngine = new FloodFillEngine();
+
     this.history = new HistoryManager();
 
     /** State saving optimisation properties */
@@ -128,68 +134,8 @@ class DrawingApp {
    * @returns {void}
    */
   init() {
-    this.setupEventListeners();
+    this.eventHandler.setupAllEventListeners();
     this.resizeCanvas();
-  }
-
-  /**
-   * Sets up all event listeners for the drawing application.
-   * @returns {void}
-   */
-  setupEventListeners() {
-    this.setupCanvasDrawingEvents();
-    this.setupToolbarButtonEvents();
-    this.setupWindowEvents();
-  }
-
-  /**
-   * Sets up mouse and touch events for drawing on the canvas.
-   * @returns {void}
-   */
-  setupCanvasDrawingEvents() {
-    const drawEvents = this.getDrawingEventConfigurations();
-
-    drawEvents.forEach(({ event, handler, options }) => {
-      this.visibleCanvas.addEventListener(event, handler, options);
-    });
-  }
-
-  /**
-   * Returns the configuration for all drawing-related events.
-   * @returns {Array<{event: string, handler: Function, options?: Object}>}
-   */
-  getDrawingEventConfigurations() {
-    return [
-      { event: "mousedown", handler: this.handlePointerDown.bind(this) },
-      { event: "mousemove", handler: this.handleDrawMove.bind(this) },
-      { event: "mouseup", handler: this.handleDrawEnd.bind(this) },
-      { event: "mouseleave", handler: this.handleDrawEnd.bind(this) },
-      {
-        event: "touchstart",
-        handler: this.handlePointerDown.bind(this),
-        options: { passive: false },
-      },
-      {
-        event: "touchmove",
-        handler: this.handleDrawMove.bind(this),
-        options: { passive: false },
-      },
-      { event: "touchend", handler: this.handleDrawEnd.bind(this) },
-      { event: "touchcancel", handler: this.handleDrawEnd.bind(this) },
-    ];
-  }
-
-  /**
-   * Sets up click events for all toolbar buttons.
-   * @returns {void}
-   */
-  setupToolbarButtonEvents() {
-    this.clearBtn.addEventListener("click", this.handleClear.bind(this));
-    this.undoBtn.addEventListener("click", this.handleUndo.bind(this));
-    this.redoBtn.addEventListener("click", this.handleRedo.bind(this));
-    this.penBtn.addEventListener("click", this.selectPenTool.bind(this));
-    this.fillBtn.addEventListener("click", this.selectFillTool.bind(this));
-    this.saveBtn.addEventListener("click", this.handleSave.bind(this));
   }
 
   /**
@@ -237,98 +183,12 @@ class DrawingApp {
   }
 
   /**
-   * Sets up window-level events such as resize.
-   * @returns {void}
-   */
-  setupWindowEvents() {
-    window.addEventListener("resize", this.resizeCanvas.bind(this));
-  }
-
-  /**
-   * Gets the pointer (mouse or touch) position relative to the canvas.
-   * Uses changedTouches[0] for 'touchend' and 'touchcancel', otherwise touches[0].
-   * Falls back to mouse event properties if not a touch event.
-   * Rounds coordinates for pixel-perfect positioning on high-DPI screens.
-   * @param {MouseEvent|TouchEvent} e - The pointer event
-   * @returns {{x: number, y: number}} The pointer position
-   */
-  getPointerPosition(e) {
-    const rect = this.visibleCanvas.getBoundingClientRect();
-    const clientPos = this.getClientPositionFromEvent(e);
-    return this.convertClientToCanvasPosition(clientPos, rect);
-  }
-
-  /**
-   * Extracts client coordinates from a mouse or touch event.
-   * @param {MouseEvent|TouchEvent} e - The pointer event
-   * @returns {{x: number, y: number}} The client coordinates
-   */
-  getClientPositionFromEvent(e) {
-    if (e.touches || e.changedTouches) {
-      return this.getTouchPosition(e);
-    } else {
-      return this.getMousePosition(e);
-    }
-  }
-
-  /**
-   * Extracts client coordinates from a touch event.
-   * @param {TouchEvent} e - The touch event
-   * @returns {{x: number, y: number}} The client coordinates
-   */
-  getTouchPosition(e) {
-    let clientX, clientY;
-    if (e.type === "touchend" || e.type === "touchcancel") {
-      if (e.changedTouches && e.changedTouches.length > 0) {
-        clientX = e.changedTouches[0].clientX;
-        clientY = e.changedTouches[0].clientY;
-      } else {
-        /** Fallback: no touches left, use last known position (could be undefined) */
-        clientX = 0;
-        clientY = 0;
-      }
-    } else {
-      if (e.touches && e.touches.length > 0) {
-        clientX = e.touches[0].clientX;
-        clientY = e.touches[0].clientY;
-      } else {
-        clientX = 0;
-        clientY = 0;
-      }
-    }
-    return { x: clientX, y: clientY };
-  }
-
-  /**
-   * Extracts client coordinates from a mouse event.
-   * @param {MouseEvent} e - The mouse event
-   * @returns {{x: number, y: number}} The client coordinates
-   */
-  getMousePosition(e) {
-    return { x: e.clientX, y: e.clientY };
-  }
-
-  /**
-   * Converts client coordinates to canvas-relative coordinates.
-   * @param {{x: number, y: number}} clientPos - The client coordinates
-   * @param {DOMRect} rect - The canvas bounding rectangle
-   * @returns {{x: number, y: number}} The canvas coordinates
-   */
-  convertClientToCanvasPosition(clientPos, rect) {
-    /** Round coordinates to ensure pixel-perfect positioning on high-DPI screens */
-    return {
-      x: Math.round(clientPos.x - rect.left),
-      y: Math.round(clientPos.y - rect.top),
-    };
-  }
-
-  /**
    * Handles pointer down event, switching between pen and fill tools.
    * @param {MouseEvent|TouchEvent} e - The pointer event
    * @returns {void}
    */
   handlePointerDown(e) {
-    const pos = this.getPointerPosition(e);
+    const pos = this.eventHandler.getPointerPosition(e);
 
     if (this.currentTool === "fill") {
       this.handleFill(pos);
@@ -344,7 +204,7 @@ class DrawingApp {
    */
   handleDrawStart(e) {
     this.drawing = true;
-    this.lastPos = this.getPointerPosition(e);
+    this.lastPos = this.eventHandler.getPointerPosition(e);
   }
 
   /**
@@ -356,7 +216,7 @@ class DrawingApp {
     if (!this.drawing) return;
 
     e.preventDefault();
-    const currentPos = this.getPointerPosition(e);
+    const currentPos = this.eventHandler.getPointerPosition(e);
 
     this.drawLine(this.lastPos, currentPos);
     this.lastPos = currentPos;
@@ -540,7 +400,7 @@ class DrawingApp {
    * @returns {boolean}
    */
   shouldSkipFill(targetColor, fillColor, tolerance = 0) {
-    return this.colorsEqual(targetColor, fillColor, tolerance);
+    return this.floodFillEngine.colorsEqual(targetColor, fillColor, tolerance);
   }
 
   /**
@@ -552,7 +412,34 @@ class DrawingApp {
    * @returns {void}
    */
   performFillOperation(position, targetColor, fillColor, tolerance = 0) {
-    this.floodFill(position.x, position.y, targetColor, fillColor, tolerance);
+    // Get image data for the entire canvas
+    const fullImageData = this.canvasManager.getCanvasImageData();
+
+    // Perform flood fill using the engine
+    const result = this.floodFillEngine.performFloodFill(
+      fullImageData,
+      position.x,
+      position.y,
+      targetColor,
+      fillColor,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height,
+      tolerance
+    );
+
+    // Only update the affected region if bounding box is valid
+    if (
+      result.boundingBox.minX <= result.boundingBox.maxX &&
+      result.boundingBox.minY <= result.boundingBox.maxY
+    ) {
+      this.floodFillEngine.applyFillToCanvasRegion(
+        this.visibleCtx,
+        result.imageData,
+        result.boundingBox,
+        this.visibleCanvas.width
+      );
+    }
+
     /** Use immediate save for discrete fill actions */
     this.scheduleStateSave(true);
   }
@@ -584,291 +471,6 @@ class DrawingApp {
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
     return { r, g, b, a: 255 };
-  }
-
-  /**
-   * Compares two RGBA colour objects for equality with tolerance for transparent pixels.
-   * @param {{r: number, g: number, b: number, a: number}} color1 - The first colour
-   * @param {{r: number, g: number, b: number, a: number}} color2 - The second colour
-   * @param {number} [tolerance=0] - The tolerance for colour differences (0-255)
-   * @returns {boolean}
-   */
-  colorsEqual(color1, color2, tolerance = 0) {
-    // If both colours are fully transparent, consider them equal regardless of RGB
-    if (color1.a === 0 && color2.a === 0) {
-      return true;
-    }
-
-    // If one is transparent and the other isn't, they're different
-    if ((color1.a === 0) !== (color2.a === 0)) {
-      return false;
-    }
-
-    // For non-transparent pixels, check all channels with tolerance
-    return (
-      Math.abs(color1.r - color2.r) <= tolerance &&
-      Math.abs(color1.g - color2.g) <= tolerance &&
-      Math.abs(color1.b - color2.b) <= tolerance &&
-      Math.abs(color1.a - color2.a) <= tolerance
-    );
-  }
-
-  /**
-   * Performs flood fill algorithm to fill an area with the same colour.
-   * Uses bounding box optimization to only process affected regions.
-   * @param {number} startX - The starting x co-ordinate
-   * @param {number} startY - The starting y co-ordinate
-   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
-   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
-   * @param {number} [tolerance=0] - The tolerance for colour differences
-   * @returns {void}
-   */
-  floodFill(startX, startY, targetColor, fillColor, tolerance = 0) {
-    // Initialize bounding box to track filled area
-    const boundingBox = {
-      minX: startX,
-      maxX: startX,
-      minY: startY,
-      maxY: startY,
-    };
-
-    // Get image data for the entire canvas initially
-    const fullImageData = this.canvasManager.getCanvasImageData();
-    const fillArea = this.createFillArea(
-      startX,
-      startY,
-      targetColor,
-      fillColor,
-      fullImageData,
-      tolerance,
-      boundingBox
-    );
-
-    // Only update the affected region if bounding box is valid
-    if (
-      boundingBox.minX <= boundingBox.maxX &&
-      boundingBox.minY <= boundingBox.maxY
-    ) {
-      this.applyFillToCanvasRegion(fullImageData, boundingBox);
-    }
-  }
-
-  /**
-   * Creates the filled area using a stack-based flood fill algorithm.
-   * Delegates stack processing and pixel checks to helper methods for clarity.
-   * @param {number} startX - The starting x co-ordinate
-   * @param {number} startY - The starting y co-ordinate
-   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
-   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
-   * @param {ImageData} imageData - The image data
-   * @param {number} [tolerance=0] - The tolerance for colour differences
-   * @param {{minX: number, maxX: number, minY: number, maxY: number}} boundingBox - The bounding box to update
-   * @returns {void}
-   */
-  createFillArea(
-    startX,
-    startY,
-    targetColor,
-    fillColor,
-    imageData,
-    tolerance = 0,
-    boundingBox
-  ) {
-    const stack = [{ x: startX, y: startY }];
-    const data = imageData.data;
-    const { width, height } = this.visibleCanvas;
-    this.processFillStack(
-      stack,
-      data,
-      width,
-      height,
-      targetColor,
-      fillColor,
-      tolerance,
-      boundingBox
-    );
-  }
-
-  /**
-   * Processes the stack for the flood fill, filling pixels as appropriate.
-   * @param {Array<{x: number, y: number}>} stack - The stack of pixels
-   * @param {Uint8ClampedArray} data - The image data array
-   * @param {number} width - The canvas width
-   * @param {number} height - The canvas height
-   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
-   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
-   * @param {number} [tolerance=0] - The tolerance for colour differences
-   * @param {{minX: number, maxX: number, minY: number, maxY: number}} boundingBox - The bounding box to update
-   * @returns {void}
-   */
-  processFillStack(
-    stack,
-    data,
-    width,
-    height,
-    targetColor,
-    fillColor,
-    tolerance = 0,
-    boundingBox
-  ) {
-    while (stack.length > 0) {
-      const currentPixel = stack.pop();
-      if (
-        !this.shouldFillPixel(
-          currentPixel,
-          width,
-          height,
-          data,
-          targetColor,
-          tolerance
-        )
-      ) {
-        continue;
-      }
-      this.fillPixel(currentPixel, data, width, fillColor);
-
-      // Update bounding box
-      boundingBox.minX = Math.min(boundingBox.minX, currentPixel.x);
-      boundingBox.maxX = Math.max(boundingBox.maxX, currentPixel.x);
-      boundingBox.minY = Math.min(boundingBox.minY, currentPixel.y);
-      boundingBox.maxY = Math.max(boundingBox.maxY, currentPixel.y);
-
-      this.addNeighboringPixelsToStack(currentPixel, stack);
-    }
-  }
-
-  /**
-   * Determines if a pixel is within bounds and matches the target colour.
-   * @param {{x: number, y: number}} pixel - The pixel
-   * @param {number} width - The canvas width
-   * @param {number} height - The canvas height
-   * @param {Uint8ClampedArray} data - The image data array
-   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
-   * @param {number} [tolerance=0] - The tolerance for colour differences
-   * @returns {boolean}
-   */
-  shouldFillPixel(pixel, width, height, data, targetColor, tolerance = 0) {
-    if (this.isPixelOutOfBounds(pixel, width, height)) {
-      return false;
-    }
-    const pixelColor = this.getPixelColorFromImageData(pixel, data, width);
-    return this.colorsEqual(pixelColor, targetColor, tolerance);
-  }
-
-  /**
-   * Fills a single pixel with the specified fill colour.
-   * @param {{x: number, y: number}} pixel - The pixel
-   * @param {Uint8ClampedArray} data - The image data array
-   * @param {number} width - The canvas width
-   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
-   * @returns {void}
-   */
-  fillPixel(pixel, data, width, fillColor) {
-    this.setPixelColor(pixel, fillColor, data, width);
-  }
-
-  /**
-   * Checks if a pixel co-ordinate is outside the canvas boundaries.
-   * @param {{x: number, y: number}} pixel - The pixel
-   * @param {number} width - The canvas width
-   * @param {number} height - The canvas height
-   * @returns {boolean}
-   */
-  isPixelOutOfBounds(pixel, width, height) {
-    return pixel.x < 0 || pixel.x >= width || pixel.y < 0 || pixel.y >= height;
-  }
-
-  /**
-   * Gets the colour of a specific pixel from image data.
-   * @param {{x: number, y: number}} pixel - The pixel
-   * @param {Uint8ClampedArray} data - The image data array
-   * @param {number} width - The canvas width
-   * @returns {{r: number, g: number, b: number, a: number}} The pixel colour
-   */
-  getPixelColorFromImageData(pixel, data, width) {
-    const index = (pixel.y * width + pixel.x) * 4;
-    return {
-      r: data[index],
-      g: data[index + 1],
-      b: data[index + 2],
-      a: data[index + 3],
-    };
-  }
-
-  /**
-   * Sets the colour of a specific pixel in the image data.
-   * @param {{x: number, y: number}} pixel - The pixel
-   * @param {{r: number, g: number, b: number, a: number}} color - The colour
-   * @param {Uint8ClampedArray} data - The image data array
-   * @param {number} width - The canvas width
-   * @returns {void}
-   */
-  setPixelColor(pixel, color, data, width) {
-    const index = (pixel.y * width + pixel.x) * 4;
-    data[index] = color.r;
-    data[index + 1] = color.g;
-    data[index + 2] = color.b;
-    data[index + 3] = color.a;
-  }
-
-  /**
-   * Adds the four neighbouring pixels (up, down, left, right) to the processing stack.
-   * @param {{x: number, y: number}} pixel - The pixel
-   * @param {Array<{x: number, y: number}>} stack - The stack of pixels
-   * @returns {void}
-   */
-  addNeighboringPixelsToStack(pixel, stack) {
-    stack.push({ x: pixel.x + 1, y: pixel.y });
-    stack.push({ x: pixel.x - 1, y: pixel.y });
-    stack.push({ x: pixel.x, y: pixel.y + 1 });
-    stack.push({ x: pixel.x, y: pixel.y - 1 });
-  }
-
-  /**
-   * Applies the modified image data back to the canvas for a specific region.
-   * @param {ImageData} imageData - The image data
-   * @param {{minX: number, maxX: number, minY: number, maxY: number}} boundingBox - The bounding box of the region to update
-   * @returns {void}
-   */
-  applyFillToCanvasRegion(imageData, boundingBox) {
-    const regionWidth = boundingBox.maxX - boundingBox.minX + 1;
-    const regionHeight = boundingBox.maxY - boundingBox.minY + 1;
-
-    // Create a new ImageData for just the affected region
-    const regionImageData = new ImageData(regionWidth, regionHeight);
-    const fullData = imageData.data;
-    const regionData = regionImageData.data;
-    const fullWidth = this.visibleCanvas.width;
-
-    // Copy the affected region from the full image data
-    for (let y = boundingBox.minY; y <= boundingBox.maxY; y++) {
-      for (let x = boundingBox.minX; x <= boundingBox.maxX; x++) {
-        const fullIndex = (y * fullWidth + x) * 4;
-        const regionIndex =
-          ((y - boundingBox.minY) * regionWidth + (x - boundingBox.minX)) * 4;
-
-        regionData[regionIndex] = fullData[fullIndex]; // R
-        regionData[regionIndex + 1] = fullData[fullIndex + 1]; // G
-        regionData[regionIndex + 2] = fullData[fullIndex + 2]; // B
-        regionData[regionIndex + 3] = fullData[fullIndex + 3]; // A
-      }
-    }
-
-    // Put only the affected region back to the canvas
-    this.visibleCtx.putImageData(
-      regionImageData,
-      boundingBox.minX,
-      boundingBox.minY
-    );
-  }
-
-  /**
-   * Applies the modified image data back to the entire canvas.
-   * @param {ImageData} imageData - The image data
-   * @returns {void}
-   */
-  applyFillToCanvas(imageData) {
-    this.visibleCtx.putImageData(imageData, 0, 0);
   }
 
   /**
@@ -1123,6 +725,495 @@ class HistoryManager {
    */
   getMemoryUsageMB() {
     return Math.round((this.memoryUsage / (1024 * 1024)) * 100) / 100;
+  }
+}
+
+// Handles flood fill algorithm implementation
+class FloodFillEngine {
+  /**
+   * Initialises the flood fill engine.
+   */
+  constructor() {
+    // No initialization needed for this stateless engine
+  }
+
+  /**
+   * Performs flood fill algorithm to fill an area with the same colour.
+   * Uses bounding box optimization to only process affected regions.
+   * @param {ImageData} imageData - The image data to modify
+   * @param {number} startX - The starting x co-ordinate
+   * @param {number} startY - The starting y co-ordinate
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @param {number} canvasWidth - The canvas width
+   * @param {number} canvasHeight - The canvas height
+   * @param {number} [tolerance=0] - The tolerance for colour differences
+   * @returns {{imageData: ImageData, boundingBox: {minX: number, maxX: number, minY: number, maxY: number}}} Modified image data and bounding box
+   */
+  performFloodFill(
+    imageData,
+    startX,
+    startY,
+    targetColor,
+    fillColor,
+    canvasWidth,
+    canvasHeight,
+    tolerance = 0
+  ) {
+    // Initialize bounding box to track filled area
+    const boundingBox = {
+      minX: startX,
+      maxX: startX,
+      minY: startY,
+      maxY: startY,
+    };
+
+    this.createFillArea(
+      startX,
+      startY,
+      targetColor,
+      fillColor,
+      imageData,
+      canvasWidth,
+      canvasHeight,
+      tolerance,
+      boundingBox
+    );
+
+    return { imageData, boundingBox };
+  }
+
+  /**
+   * Creates the filled area using a stack-based flood fill algorithm.
+   * Delegates stack processing and pixel checks to helper methods for clarity.
+   * @param {number} startX - The starting x co-ordinate
+   * @param {number} startY - The starting y co-ordinate
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @param {ImageData} imageData - The image data
+   * @param {number} width - The canvas width
+   * @param {number} height - The canvas height
+   * @param {number} [tolerance=0] - The tolerance for colour differences
+   * @param {{minX: number, maxX: number, minY: number, maxY: number}} boundingBox - The bounding box to update
+   * @returns {void}
+   */
+  createFillArea(
+    startX,
+    startY,
+    targetColor,
+    fillColor,
+    imageData,
+    width,
+    height,
+    tolerance = 0,
+    boundingBox
+  ) {
+    const stack = [{ x: startX, y: startY }];
+    const data = imageData.data;
+    this.processFillStack(
+      stack,
+      data,
+      width,
+      height,
+      targetColor,
+      fillColor,
+      tolerance,
+      boundingBox
+    );
+  }
+
+  /**
+   * Processes the stack for the flood fill, filling pixels as appropriate.
+   * @param {Array<{x: number, y: number}>} stack - The stack of pixels
+   * @param {Uint8ClampedArray} data - The image data array
+   * @param {number} width - The canvas width
+   * @param {number} height - The canvas height
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @param {number} [tolerance=0] - The tolerance for colour differences
+   * @param {{minX: number, maxX: number, minY: number, maxY: number}} boundingBox - The bounding box to update
+   * @returns {void}
+   */
+  processFillStack(
+    stack,
+    data,
+    width,
+    height,
+    targetColor,
+    fillColor,
+    tolerance = 0,
+    boundingBox
+  ) {
+    while (stack.length > 0) {
+      const currentPixel = stack.pop();
+      if (
+        !this.shouldFillPixel(
+          currentPixel,
+          width,
+          height,
+          data,
+          targetColor,
+          tolerance
+        )
+      ) {
+        continue;
+      }
+      this.fillPixel(currentPixel, data, width, fillColor);
+
+      // Update bounding box
+      boundingBox.minX = Math.min(boundingBox.minX, currentPixel.x);
+      boundingBox.maxX = Math.max(boundingBox.maxX, currentPixel.x);
+      boundingBox.minY = Math.min(boundingBox.minY, currentPixel.y);
+      boundingBox.maxY = Math.max(boundingBox.maxY, currentPixel.y);
+
+      this.addNeighboringPixelsToStack(currentPixel, stack);
+    }
+  }
+
+  /**
+   * Determines if a pixel is within bounds and matches the target colour.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {number} width - The canvas width
+   * @param {number} height - The canvas height
+   * @param {Uint8ClampedArray} data - The image data array
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {number} [tolerance=0] - The tolerance for colour differences
+   * @returns {boolean}
+   */
+  shouldFillPixel(pixel, width, height, data, targetColor, tolerance = 0) {
+    if (this.isPixelOutOfBounds(pixel, width, height)) {
+      return false;
+    }
+    const pixelColor = this.getPixelColorFromImageData(pixel, data, width);
+    return this.colorsEqual(pixelColor, targetColor, tolerance);
+  }
+
+  /**
+   * Fills a single pixel with the specified fill colour.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {Uint8ClampedArray} data - The image data array
+   * @param {number} width - The canvas width
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @returns {void}
+   */
+  fillPixel(pixel, data, width, fillColor) {
+    this.setPixelColor(pixel, fillColor, data, width);
+  }
+
+  /**
+   * Checks if a pixel co-ordinate is outside the canvas boundaries.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {number} width - The canvas width
+   * @param {number} height - The canvas height
+   * @returns {boolean}
+   */
+  isPixelOutOfBounds(pixel, width, height) {
+    return pixel.x < 0 || pixel.x >= width || pixel.y < 0 || pixel.y >= height;
+  }
+
+  /**
+   * Gets the colour of a specific pixel from image data.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {Uint8ClampedArray} data - The image data array
+   * @param {number} width - The canvas width
+   * @returns {{r: number, g: number, b: number, a: number}} The pixel colour
+   */
+  getPixelColorFromImageData(pixel, data, width) {
+    const index = (pixel.y * width + pixel.x) * 4;
+    return {
+      r: data[index],
+      g: data[index + 1],
+      b: data[index + 2],
+      a: data[index + 3],
+    };
+  }
+
+  /**
+   * Sets the colour of a specific pixel in the image data.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {{r: number, g: number, b: number, a: number}} color - The colour
+   * @param {Uint8ClampedArray} data - The image data array
+   * @param {number} width - The canvas width
+   * @returns {void}
+   */
+  setPixelColor(pixel, color, data, width) {
+    const index = (pixel.y * width + pixel.x) * 4;
+    data[index] = color.r;
+    data[index + 1] = color.g;
+    data[index + 2] = color.b;
+    data[index + 3] = color.a;
+  }
+
+  /**
+   * Adds the four neighbouring pixels (up, down, left, right) to the processing stack.
+   * @param {{x: number, y: number}} pixel - The pixel
+   * @param {Array<{x: number, y: number}>} stack - The stack of pixels
+   * @returns {void}
+   */
+  addNeighboringPixelsToStack(pixel, stack) {
+    stack.push({ x: pixel.x + 1, y: pixel.y });
+    stack.push({ x: pixel.x - 1, y: pixel.y });
+    stack.push({ x: pixel.x, y: pixel.y + 1 });
+    stack.push({ x: pixel.x, y: pixel.y - 1 });
+  }
+
+  /**
+   * Compares two RGBA colour objects for equality with tolerance for transparent pixels.
+   * @param {{r: number, g: number, b: number, a: number}} color1 - The first colour
+   * @param {{r: number, g: number, b: number, a: number}} color2 - The second colour
+   * @param {number} [tolerance=0] - The tolerance for colour differences (0-255)
+   * @returns {boolean}
+   */
+  colorsEqual(color1, color2, tolerance = 0) {
+    // If both colours are fully transparent, consider them equal regardless of RGB
+    if (color1.a === 0 && color2.a === 0) {
+      return true;
+    }
+
+    // If one is transparent and the other isn't, they're different
+    if ((color1.a === 0) !== (color2.a === 0)) {
+      return false;
+    }
+
+    // For non-transparent pixels, check all channels with tolerance
+    return (
+      Math.abs(color1.r - color2.r) <= tolerance &&
+      Math.abs(color1.g - color2.g) <= tolerance &&
+      Math.abs(color1.b - color2.b) <= tolerance &&
+      Math.abs(color1.a - color2.a) <= tolerance
+    );
+  }
+
+  /**
+   * Applies the modified image data back to the canvas for a specific region.
+   * @param {CanvasRenderingContext2D} ctx - The canvas context
+   * @param {ImageData} imageData - The image data
+   * @param {{minX: number, maxX: number, minY: number, maxY: number}} boundingBox - The bounding box of the region to update
+   * @param {number} canvasWidth - The canvas width
+   * @returns {void}
+   */
+  applyFillToCanvasRegion(ctx, imageData, boundingBox, canvasWidth) {
+    const regionWidth = boundingBox.maxX - boundingBox.minX + 1;
+    const regionHeight = boundingBox.maxY - boundingBox.minY + 1;
+
+    // Create a new ImageData for just the affected region
+    const regionImageData = new ImageData(regionWidth, regionHeight);
+    const fullData = imageData.data;
+    const regionData = regionImageData.data;
+
+    // Copy the affected region from the full image data
+    for (let y = boundingBox.minY; y <= boundingBox.maxY; y++) {
+      for (let x = boundingBox.minX; x <= boundingBox.maxX; x++) {
+        const fullIndex = (y * canvasWidth + x) * 4;
+        const regionIndex =
+          ((y - boundingBox.minY) * regionWidth + (x - boundingBox.minX)) * 4;
+
+        regionData[regionIndex] = fullData[fullIndex]; // R
+        regionData[regionIndex + 1] = fullData[fullIndex + 1]; // G
+        regionData[regionIndex + 2] = fullData[fullIndex + 2]; // B
+        regionData[regionIndex + 3] = fullData[fullIndex + 3]; // A
+      }
+    }
+
+    // Put only the affected region back to the canvas
+    ctx.putImageData(regionImageData, boundingBox.minX, boundingBox.minY);
+  }
+}
+
+// Manages all DOM event setup and delegation
+class EventHandler {
+  /**
+   * Initialises the event handler with reference to the drawing application.
+   * @param {DrawingApp} drawingApp - The drawing application instance
+   */
+  constructor(drawingApp) {
+    this.drawingApp = drawingApp;
+    this.visibleCanvas = drawingApp.visibleCanvas;
+  }
+
+  /**
+   * Sets up all event listeners for the drawing application.
+   * @returns {void}
+   */
+  setupAllEventListeners() {
+    this.setupCanvasDrawingEvents();
+    this.setupToolbarButtonEvents();
+    this.setupWindowEvents();
+  }
+
+  /**
+   * Sets up mouse and touch events for drawing on the canvas.
+   * @returns {void}
+   */
+  setupCanvasDrawingEvents() {
+    const drawEvents = this.getDrawingEventConfigurations();
+
+    drawEvents.forEach(({ event, handler, options }) => {
+      this.visibleCanvas.addEventListener(event, handler, options);
+    });
+  }
+
+  /**
+   * Returns the configuration for all drawing-related events.
+   * @returns {Array<{event: string, handler: Function, options?: Object}>}
+   */
+  getDrawingEventConfigurations() {
+    return [
+      {
+        event: "mousedown",
+        handler: this.drawingApp.handlePointerDown.bind(this.drawingApp),
+      },
+      {
+        event: "mousemove",
+        handler: this.drawingApp.handleDrawMove.bind(this.drawingApp),
+      },
+      {
+        event: "mouseup",
+        handler: this.drawingApp.handleDrawEnd.bind(this.drawingApp),
+      },
+      {
+        event: "mouseleave",
+        handler: this.drawingApp.handleDrawEnd.bind(this.drawingApp),
+      },
+      {
+        event: "touchstart",
+        handler: this.drawingApp.handlePointerDown.bind(this.drawingApp),
+        options: { passive: false },
+      },
+      {
+        event: "touchmove",
+        handler: this.drawingApp.handleDrawMove.bind(this.drawingApp),
+        options: { passive: false },
+      },
+      {
+        event: "touchend",
+        handler: this.drawingApp.handleDrawEnd.bind(this.drawingApp),
+      },
+      {
+        event: "touchcancel",
+        handler: this.drawingApp.handleDrawEnd.bind(this.drawingApp),
+      },
+    ];
+  }
+
+  /**
+   * Sets up click events for all toolbar buttons.
+   * @returns {void}
+   */
+  setupToolbarButtonEvents() {
+    this.drawingApp.clearBtn.addEventListener(
+      "click",
+      this.drawingApp.handleClear.bind(this.drawingApp)
+    );
+    this.drawingApp.undoBtn.addEventListener(
+      "click",
+      this.drawingApp.handleUndo.bind(this.drawingApp)
+    );
+    this.drawingApp.redoBtn.addEventListener(
+      "click",
+      this.drawingApp.handleRedo.bind(this.drawingApp)
+    );
+    this.drawingApp.penBtn.addEventListener(
+      "click",
+      this.drawingApp.selectPenTool.bind(this.drawingApp)
+    );
+    this.drawingApp.fillBtn.addEventListener(
+      "click",
+      this.drawingApp.selectFillTool.bind(this.drawingApp)
+    );
+    this.drawingApp.saveBtn.addEventListener(
+      "click",
+      this.drawingApp.handleSave.bind(this.drawingApp)
+    );
+  }
+
+  /**
+   * Sets up window-level events such as resize.
+   * @returns {void}
+   */
+  setupWindowEvents() {
+    window.addEventListener(
+      "resize",
+      this.drawingApp.resizeCanvas.bind(this.drawingApp)
+    );
+  }
+
+  /**
+   * Gets the pointer (mouse or touch) position relative to the canvas.
+   * Uses changedTouches[0] for 'touchend' and 'touchcancel', otherwise touches[0].
+   * Falls back to mouse event properties if not a touch event.
+   * Rounds coordinates for pixel-perfect positioning on high-DPI screens.
+   * @param {MouseEvent|TouchEvent} e - The pointer event
+   * @returns {{x: number, y: number}} The pointer position
+   */
+  getPointerPosition(e) {
+    const rect = this.visibleCanvas.getBoundingClientRect();
+    const clientPos = this.getClientPositionFromEvent(e);
+    return this.convertClientToCanvasPosition(clientPos, rect);
+  }
+
+  /**
+   * Extracts client coordinates from a mouse or touch event.
+   * @param {MouseEvent|TouchEvent} e - The pointer event
+   * @returns {{x: number, y: number}} The client coordinates
+   */
+  getClientPositionFromEvent(e) {
+    if (e.touches || e.changedTouches) {
+      return this.getTouchPosition(e);
+    } else {
+      return this.getMousePosition(e);
+    }
+  }
+
+  /**
+   * Extracts client coordinates from a touch event.
+   * @param {TouchEvent} e - The touch event
+   * @returns {{x: number, y: number}} The client coordinates
+   */
+  getTouchPosition(e) {
+    let clientX, clientY;
+    if (e.type === "touchend" || e.type === "touchcancel") {
+      if (e.changedTouches && e.changedTouches.length > 0) {
+        clientX = e.changedTouches[0].clientX;
+        clientY = e.changedTouches[0].clientY;
+      } else {
+        /** Fallback: no touches left, use last known position (could be undefined) */
+        clientX = 0;
+        clientY = 0;
+      }
+    } else {
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = 0;
+        clientY = 0;
+      }
+    }
+    return { x: clientX, y: clientY };
+  }
+
+  /**
+   * Extracts client coordinates from a mouse event.
+   * @param {MouseEvent} e - The mouse event
+   * @returns {{x: number, y: number}} The client coordinates
+   */
+  getMousePosition(e) {
+    return { x: e.clientX, y: e.clientY };
+  }
+
+  /**
+   * Converts client coordinates to canvas-relative coordinates.
+   * @param {{x: number, y: number}} clientPos - The client coordinates
+   * @param {DOMRect} rect - The canvas bounding rectangle
+   * @returns {{x: number, y: number}} The canvas coordinates
+   */
+  convertClientToCanvasPosition(clientPos, rect) {
+    /** Round coordinates to ensure pixel-perfect positioning on high-DPI screens */
+    return {
+      x: Math.round(clientPos.x - rect.left),
+      y: Math.round(clientPos.y - rect.top),
+    };
   }
 }
 
