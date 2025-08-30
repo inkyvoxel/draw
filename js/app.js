@@ -1,3 +1,59 @@
+// Configuration constants for the drawing application
+class DrawingConfig {
+  /**
+   * Returns the default configuration values for the drawing application.
+   * @returns {Object} The configuration object with default values
+   */
+  static get DEFAULTS() {
+    return {
+      // History management
+      HISTORY_MAX_STATES: 50,
+      HISTORY_MAX_MEMORY_MB: 500,
+
+      // State management
+      STATE_SAVE_DELAY_MS: 300,
+
+      // Drawing settings
+      MIN_LINE_WIDTH: 0.5,
+      FILL_TOLERANCE: 0,
+
+      // Canvas settings
+      CANVAS_PADDING: 24,
+      MAX_CANVAS_SIZE: 32767,
+      DEFAULT_DEVICE_PIXEL_RATIO: 1,
+
+      // Memory calculations
+      BYTES_PER_MB: 1024 * 1024,
+      MEMORY_CALCULATION_PRECISION: 100,
+
+      // Flood fill neighbour offsets
+      NEIGHBOUR_OFFSETS: [
+        { x: 1, y: 0 }, // Right
+        { x: -1, y: 0 }, // Left
+        { x: 0, y: 1 }, // Down
+        { x: 0, y: -1 }, // Up
+      ],
+
+      // DOM element IDs and configuration
+      DOM_ELEMENTS: [
+        {
+          id: "draw-canvas",
+          name: "Canvas element",
+          property: "visibleCanvas",
+        },
+        { id: "color", name: "Colour picker", property: "colorPicker" },
+        { id: "size", name: "Size picker", property: "sizePicker" },
+        { id: "clear", name: "Clear button", property: "clearBtn" },
+        { id: "undo", name: "Undo button", property: "undoBtn" },
+        { id: "redo", name: "Redo button", property: "redoBtn" },
+        { id: "save", name: "Save button", property: "saveBtn" },
+        { id: "pen", name: "Pen tool button", property: "penBtn" },
+        { id: "fill", name: "Fill tool button", property: "fillBtn" },
+      ],
+    };
+  }
+}
+
 // Main class for the drawing application, coordinating between specialised manager classes
 class DrawingApp {
   /**
@@ -11,7 +67,9 @@ class DrawingApp {
 
     this.drawing = false;
     this.lastPos = { x: 0, y: 0 };
-    this.dpr = window.devicePixelRatio || 1;
+    this.dpr =
+      window.devicePixelRatio ||
+      DrawingConfig.DEFAULTS.DEFAULT_DEVICE_PIXEL_RATIO;
 
     /** Canvas manager for canvas operations */
     this.canvasManager = new CanvasManager(this.visibleCanvas, this.dpr);
@@ -73,17 +131,7 @@ class DrawingApp {
    * @returns {Array<{id: string, name: string, property: string}>}
    */
   getRequiredDOMElements() {
-    return [
-      { id: "draw-canvas", name: "Canvas element", property: "visibleCanvas" },
-      { id: "color", name: "Colour picker", property: "colorPicker" },
-      { id: "size", name: "Size picker", property: "sizePicker" },
-      { id: "clear", name: "Clear button", property: "clearBtn" },
-      { id: "undo", name: "Undo button", property: "undoBtn" },
-      { id: "redo", name: "Redo button", property: "redoBtn" },
-      { id: "pen", name: "Pen button", property: "penBtn" },
-      { id: "fill", name: "Fill button", property: "fillBtn" },
-      { id: "save", name: "Save button", property: "saveBtn" },
-    ];
+    return DrawingConfig.DEFAULTS.DOM_ELEMENTS;
   }
 
   /**
@@ -366,15 +414,17 @@ class DrawingApp {
 class HistoryManager {
   /**
    * Initialises the history manager with a maximum number of states.
-   * @param {number} [maxStates=50] - The maximum number of states
+   * @param {number} [maxStates] - The maximum number of states
    */
-  constructor(maxStates = 50) {
+  constructor(maxStates = DrawingConfig.DEFAULTS.HISTORY_MAX_STATES) {
     this.states = [];
     this.currentIndex = -1;
     this.maxStates = maxStates;
     this.memoryUsage = 0;
-    /** @type {number} Maximum memory usage in bytes for storing canvas states (500MB) */
-    this.maxMemoryUsage = 500 * 1024 * 1024;
+    /** @type {number} Maximum memory usage in bytes for storing canvas states */
+    this.maxMemoryUsage =
+      DrawingConfig.DEFAULTS.HISTORY_MAX_MEMORY_MB *
+      DrawingConfig.DEFAULTS.BYTES_PER_MB;
   }
 
   /**
@@ -501,7 +551,12 @@ class HistoryManager {
    * @returns {number} Memory usage in MB
    */
   getMemoryUsageMB() {
-    return Math.round((this.memoryUsage / (1024 * 1024)) * 100) / 100;
+    return (
+      Math.round(
+        (this.memoryUsage / DrawingConfig.DEFAULTS.BYTES_PER_MB) *
+          DrawingConfig.DEFAULTS.MEMORY_CALCULATION_PRECISION
+      ) / DrawingConfig.DEFAULTS.MEMORY_CALCULATION_PRECISION
+    );
   }
 }
 
@@ -598,7 +653,7 @@ class StateManager {
     this.pendingStateSave = false;
     this.stateSaveTimeout = null;
     /** @type {number} Delay in milliseconds for debouncing state saves to prevent excessive history entries */
-    this.stateSaveDelay = 300;
+    this.stateSaveDelay = DrawingConfig.DEFAULTS.STATE_SAVE_DELAY_MS;
 
     /** UI state tracking for optimised updates */
     this.lastUndoState = null;
@@ -802,7 +857,7 @@ class DrawingEngine {
   configureBrushSettings() {
     this.visibleCtx.strokeStyle = this.colorPicker.value;
     /** Ensure minimum line width for visibility on high-DPI screens */
-    const minLineWidth = 0.5;
+    const minLineWidth = DrawingConfig.DEFAULTS.MIN_LINE_WIDTH;
     const baseLineWidth = Number(this.sizePicker.value);
     this.visibleCtx.lineWidth = Math.max(baseLineWidth, minLineWidth);
     this.visibleCtx.lineCap = "round";
@@ -956,7 +1011,7 @@ class FloodFillEngine {
    * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
    * @param {number} canvasWidth - The canvas width
    * @param {number} canvasHeight - The canvas height
-   * @param {number} [tolerance=0] - The tolerance for colour differences
+   * @param {number} [tolerance] - The tolerance for colour differences
    * @returns {{imageData: ImageData, boundingBox: {minX: number, maxX: number, minY: number, maxY: number}}} Modified image data and bounding box
    */
   performFloodFill(
@@ -967,7 +1022,7 @@ class FloodFillEngine {
     fillColor,
     canvasWidth,
     canvasHeight,
-    tolerance = 0
+    tolerance = DrawingConfig.DEFAULTS.FILL_TOLERANCE
   ) {
     // Initialize bounding box to track filled area
     const boundingBox = {
@@ -1160,10 +1215,9 @@ class FloodFillEngine {
    * @returns {void}
    */
   addNeighboringPixelsToStack(pixel, stack) {
-    stack.push({ x: pixel.x + 1, y: pixel.y });
-    stack.push({ x: pixel.x - 1, y: pixel.y });
-    stack.push({ x: pixel.x, y: pixel.y + 1 });
-    stack.push({ x: pixel.x, y: pixel.y - 1 });
+    DrawingConfig.DEFAULTS.NEIGHBOUR_OFFSETS.forEach((offset) => {
+      stack.push({ x: pixel.x + offset.x, y: pixel.y + offset.y });
+    });
   }
 
   /**
@@ -1458,7 +1512,7 @@ class CanvasManager {
     /** @type {number} Minimum canvas dimension in pixels */
     const minSize = 1;
     /** @type {number} Maximum canvas dimension in pixels supported by most browsers */
-    const maxSize = 32767;
+    const maxSize = DrawingConfig.DEFAULTS.MAX_CANVAS_SIZE;
 
     const validatedWidth = Math.max(
       minSize,
@@ -1485,7 +1539,7 @@ class CanvasManager {
   calculateCanvasSize() {
     const { headerHeight, footerHeight } = this.getLayoutElementHeights();
     /** @type {number} Padding in pixels around the canvas for better visual spacing */
-    const padding = 24;
+    const padding = DrawingConfig.DEFAULTS.CANVAS_PADDING;
 
     const availableHeight =
       window.innerHeight - headerHeight - footerHeight - padding;
