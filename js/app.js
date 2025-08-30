@@ -21,6 +21,7 @@ class DrawingConfig {
       CANVAS_PADDING: 24,
       MAX_CANVAS_SIZE: 32767,
       DEFAULT_DEVICE_PIXEL_RATIO: 1,
+      SAFE_FALLBACK_CANVAS_SIZE: { width: 800, height: 600 },
 
       // Memory calculations
       BYTES_PER_MB: 1024 * 1024,
@@ -195,6 +196,171 @@ class DrawingApp {
   }
 
   /**
+   * Validates numeric input parameters with range checking.
+   * @param {number} value - The value to validate
+   * @param {string} paramName - The parameter name for error messages
+   * @param {number} [min=0] - Minimum allowed value
+   * @param {number} [max=Infinity] - Maximum allowed value
+   * @returns {number} The validated value
+   * @throws {Error} If validation fails
+   */
+  validateNumericInput(value, paramName, min = 0, max = Infinity) {
+    if (typeof value !== "number" || isNaN(value)) {
+      throw new Error(`${paramName} must be a valid number`);
+    }
+    if (value < min || value > max) {
+      throw new Error(`${paramName} must be between ${min} and ${max}`);
+    }
+    return value;
+  }
+
+  /**
+   * Validates brush size input ensuring it meets application requirements.
+   * @param {number} size - The brush size to validate
+   * @returns {number} The validated brush size
+   * @throws {Error} If brush size is invalid
+   */
+  validateBrushSize(size) {
+    return this.validateNumericInput(
+      size,
+      "Brush size",
+      DrawingConfig.DEFAULTS.MIN_LINE_WIDTH,
+      1000 // Maximum reasonable brush size
+    );
+  }
+
+  /**
+   * Validates canvas dimensions ensuring they meet browser limitations.
+   * @param {number} width - The canvas width to validate
+   * @param {number} height - The canvas height to validate
+   * @returns {{width: number, height: number}} The validated dimensions
+   * @throws {Error} If dimensions are invalid
+   */
+  validateCanvasDimensions(width, height) {
+    const validatedWidth = this.validateNumericInput(
+      width,
+      "Canvas width",
+      1,
+      DrawingConfig.DEFAULTS.MAX_CANVAS_SIZE
+    );
+    const validatedHeight = this.validateNumericInput(
+      height,
+      "Canvas height",
+      1,
+      DrawingConfig.DEFAULTS.MAX_CANVAS_SIZE
+    );
+    return { width: validatedWidth, height: validatedHeight };
+  }
+
+  /**
+   * Validates colour values ensuring they are in proper hex format.
+   * @param {string} colour - The colour value to validate
+   * @returns {string} The validated colour value
+   * @throws {Error} If colour format is invalid
+   */
+  validateColour(colour) {
+    if (typeof colour !== "string") {
+      throw new Error("Colour must be a string");
+    }
+
+    // Allow various colour formats and normalize them
+    const hexPattern = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
+    const rgbPattern = /^rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)$/;
+    const namedColours = [
+      "black",
+      "white",
+      "red",
+      "green",
+      "blue",
+      "yellow",
+      "cyan",
+      "magenta",
+    ];
+
+    // If it's already a valid hex colour, return it
+    if (hexPattern.test(colour)) {
+      return colour;
+    }
+
+    // If it's a valid RGB colour, allow it (browser will handle it)
+    if (rgbPattern.test(colour)) {
+      return colour;
+    }
+
+    // If it's a named colour, allow it
+    if (namedColours.includes(colour.toLowerCase())) {
+      return colour;
+    }
+
+    // Try to add # if it's missing and looks like hex
+    if (/^([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(colour)) {
+      return "#" + colour;
+    }
+
+    throw new Error(
+      "Colour must be in valid format (e.g., #ff0000, #f00, rgb(255,0,0), or named colour)"
+    );
+  }
+
+  /**
+   * Handles errors gracefully and provides user feedback.
+   * @param {Error} error - The error to handle
+   * @param {string} context - The context where the error occurred
+   * @returns {void}
+   */
+  handleError(error, context) {
+    console.error(`Error in ${context}:`, error);
+
+    // Log the full error stack for debugging
+    if (error.stack) {
+      console.error("Stack trace:", error.stack);
+    }
+
+    // Attempt recovery based on context
+    this.attemptErrorRecovery(context);
+
+    // Could show user-friendly notification in the future
+    // this.showUserNotification(`Something went wrong: ${error.message}`);
+  }
+
+  /**
+   * Attempts to recover from errors based on the context.
+   * @param {string} context - The context where the error occurred
+   * @returns {void}
+   */
+  attemptErrorRecovery(context) {
+    try {
+      switch (context) {
+        case "drawing":
+          if (this.drawing) {
+            this.handleDrawEnd();
+          }
+          break;
+        case "tool-switching":
+          // Ensure any pending saves are completed
+          this.stateManager.ensureStateSaved();
+          break;
+        case "canvas-resize":
+          // Reset canvas to a safe size
+          const safeSize = DrawingConfig.DEFAULTS.SAFE_FALLBACK_CANVAS_SIZE;
+          this.canvasManager.resizeCanvas(safeSize.width, safeSize.height);
+          break;
+        case "state-management":
+          // Clear any pending operations
+          if (this.stateManager.stateSaveTimeout) {
+            clearTimeout(this.stateManager.stateSaveTimeout);
+            this.stateManager.stateSaveTimeout = null;
+          }
+          break;
+        default:
+          console.warn(`No recovery strategy for context: ${context}`);
+      }
+    } catch (recoveryError) {
+      console.error(`Recovery failed for ${context}:`, recoveryError);
+    }
+  }
+
+  /**
    * Initialises event listeners and resizes the canvas on load.
    * @returns {void}
    */
@@ -253,12 +419,16 @@ class DrawingApp {
    * @returns {void}
    */
   handlePointerDown(e) {
-    const pos = this.eventHandler.getPointerPosition(e);
+    try {
+      const pos = this.eventHandler.getPointerPosition(e);
 
-    if (this.toolManager.getCurrentTool() === "fill") {
-      this.handleFill(pos);
-    } else {
-      this.handleDrawStart(e);
+      if (this.toolManager.getCurrentTool() === "fill") {
+        this.handleFill(pos);
+      } else {
+        this.handleDrawStart(e);
+      }
+    } catch (error) {
+      this.handleError(error, "drawing");
     }
   }
 
@@ -280,11 +450,15 @@ class DrawingApp {
   handleDrawMove(e) {
     if (!this.drawing) return;
 
-    e.preventDefault();
-    const currentPos = this.eventHandler.getPointerPosition(e);
+    try {
+      e.preventDefault();
+      const currentPos = this.eventHandler.getPointerPosition(e);
 
-    this.drawLine(this.lastPos, currentPos);
-    this.lastPos = currentPos;
+      this.drawLine(this.lastPos, currentPos);
+      this.lastPos = currentPos;
+    } catch (error) {
+      this.handleError(error, "drawing");
+    }
   }
 
   /**
@@ -294,7 +468,11 @@ class DrawingApp {
    * @returns {void}
    */
   scheduleStateSave(immediate = false) {
-    this.stateManager.scheduleStateSave(immediate);
+    try {
+      this.stateManager.scheduleStateSave(immediate);
+    } catch (error) {
+      this.handleError(error, "state-management");
+    }
   }
 
   /**
@@ -341,7 +519,11 @@ class DrawingApp {
    * @returns {void}
    */
   selectPenTool() {
-    this.toolManager.selectPenTool();
+    try {
+      this.toolManager.selectPenTool();
+    } catch (error) {
+      this.handleError(error, "tool-switching");
+    }
   }
 
   /**
@@ -392,13 +574,17 @@ class DrawingApp {
    * @returns {Promise<void>}
    */
   async resizeCanvas() {
-    // Ensure any pending saves are completed before resizing
-    this.ensureStateSaved();
+    try {
+      // Ensure any pending saves are completed before resizing
+      this.ensureStateSaved();
 
-    // Delegate canvas resizing to canvas manager
-    await this.canvasManager.resizeCanvas();
+      // Delegate canvas resizing to canvas manager
+      await this.canvasManager.resizeCanvas();
 
-    this.stateManager.initializeHistoryIfEmpty();
+      this.stateManager.initializeHistoryIfEmpty();
+    } catch (error) {
+      this.handleError(error, "canvas-resize");
+    }
   }
 
   /**
@@ -852,16 +1038,46 @@ class DrawingEngine {
 
   /**
    * Configures the canvas context with current brush settings, ensuring optimal rendering on high-DPI screens.
+   * Validates colour and brush size inputs with graceful fallbacks for invalid values.
    * @returns {void}
    */
   configureBrushSettings() {
-    this.visibleCtx.strokeStyle = this.colorPicker.value;
-    /** Ensure minimum line width for visibility on high-DPI screens */
-    const minLineWidth = DrawingConfig.DEFAULTS.MIN_LINE_WIDTH;
-    const baseLineWidth = Number(this.sizePicker.value);
-    this.visibleCtx.lineWidth = Math.max(baseLineWidth, minLineWidth);
-    this.visibleCtx.lineCap = "round";
-    this.visibleCtx.lineJoin = "round";
+    try {
+      // Validate and set colour with fallback
+      try {
+        this.visibleCtx.strokeStyle = this.drawingApp.validateColour(
+          this.colorPicker.value
+        );
+      } catch (colourError) {
+        console.warn("Invalid colour, using fallback:", colourError.message);
+        this.visibleCtx.strokeStyle = this.colorPicker.value || "#000000";
+      }
+
+      /** Ensure minimum line width for visibility on high-DPI screens */
+      const minLineWidth = DrawingConfig.DEFAULTS.MIN_LINE_WIDTH;
+
+      // Validate and set brush size with fallback
+      let baseLineWidth;
+      try {
+        baseLineWidth = this.drawingApp.validateBrushSize(
+          Number(this.sizePicker.value)
+        );
+      } catch (sizeError) {
+        console.warn("Invalid brush size, using fallback:", sizeError.message);
+        baseLineWidth = Number(this.sizePicker.value) || 1;
+      }
+
+      this.visibleCtx.lineWidth = Math.max(baseLineWidth, minLineWidth);
+      this.visibleCtx.lineCap = "round";
+      this.visibleCtx.lineJoin = "round";
+    } catch (error) {
+      this.drawingApp.handleError(error, "drawing");
+      // Use safe defaults if everything fails
+      this.visibleCtx.strokeStyle = "#000000";
+      this.visibleCtx.lineWidth = DrawingConfig.DEFAULTS.MIN_LINE_WIDTH;
+      this.visibleCtx.lineCap = "round";
+      this.visibleCtx.lineJoin = "round";
+    }
   }
 
   /**
@@ -879,6 +1095,7 @@ class DrawingEngine {
 
   /**
    * Performs a flood fill operation at the specified position.
+   * Validates inputs and uses configurable tolerance for better edge handling.
    * @param {{x: number, y: number}} pos - The position to fill
    * @param {number} dpr - The device pixel ratio
    * @returns {void}
@@ -923,13 +1140,19 @@ class DrawingEngine {
 
   /**
    * Performs the complete fill operation and immediately saves state to history.
+   * Uses configurable tolerance and optimised bounding box updates.
    * @param {{x: number, y: number}} position - The fill position
    * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
    * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
-   * @param {number} [tolerance=0] - The tolerance for colour differences
+   * @param {number} [tolerance] - The tolerance for colour differences (uses config default if not specified)
    * @returns {void}
    */
-  performFillOperation(position, targetColor, fillColor, tolerance = 0) {
+  performFillOperation(
+    position,
+    targetColor,
+    fillColor,
+    tolerance = DrawingConfig.DEFAULTS.FILL_TOLERANCE
+  ) {
     // Get image data for the entire canvas
     const fullImageData = this.canvasManager.getCanvasImageData();
 
