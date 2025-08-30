@@ -14,6 +14,9 @@ class DrawingApp {
     this.lastPos = { x: 0, y: 0 };
     this.dpr = window.devicePixelRatio || 1;
 
+    /** Canvas manager for canvas operations */
+    this.canvasManager = new CanvasManager(this.visibleCanvas, this.dpr);
+
     this.history = new HistoryManager();
 
     /** State saving optimisation properties */
@@ -25,15 +28,6 @@ class DrawingApp {
     /** UI state tracking for optimised updates */
     this.lastUndoState = null;
     this.lastRedoState = null;
-
-    /** Offscreen canvas to preserve the full drawing area */
-    this.offscreenCanvas = document.createElement("canvas");
-    this.offscreenCtx = this.offscreenCanvas.getContext("2d");
-
-    /** Validate offscreen canvas context */
-    if (!this.offscreenCtx) {
-      throw new Error("Failed to get 2D context for offscreen canvas");
-    }
 
     this.init();
   }
@@ -208,7 +202,7 @@ class DrawingApp {
     this.ensureStateSaved();
 
     const filename = this.generateTimestampedFilename();
-    const dataURL = this.offscreenCanvas.toDataURL("image/png");
+    const dataURL = this.canvasManager.offscreenCanvas.toDataURL("image/png");
     this.downloadDataURL(dataURL, filename);
   }
 
@@ -403,29 +397,19 @@ class DrawingApp {
 
     this.pendingStateSave = false;
 
-    this.copyVisibleToOffscreenCanvas();
+    this.canvasManager.copyVisibleToOffscreenCanvas();
 
     /** Get ImageData from offscreen canvas for efficient storage */
-    const imageData = this.offscreenCtx.getImageData(
+    const imageData = this.canvasManager.offscreenCtx.getImageData(
       0,
       0,
-      this.offscreenCanvas.width,
-      this.offscreenCanvas.height
+      this.canvasManager.offscreenCanvas.width,
+      this.canvasManager.offscreenCanvas.height
     );
 
     /** Save state to history */
     this.history.saveState(imageData);
     this.updateUI();
-  }
-
-  /**
-   * Copies the visible canvas content to the offscreen canvas.
-   * @returns {void}
-   */
-  copyVisibleToOffscreenCanvas() {
-    /** Copy the visible canvas to the offscreen canvas */
-    this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
-    this.offscreenCtx.drawImage(this.visibleCanvas, 0, 0);
   }
 
   /**
@@ -649,7 +633,7 @@ class DrawingApp {
     };
 
     // Get image data for the entire canvas initially
-    const fullImageData = this.getCanvasImageData();
+    const fullImageData = this.canvasManager.getCanvasImageData();
     const fillArea = this.createFillArea(
       startX,
       startY,
@@ -667,19 +651,6 @@ class DrawingApp {
     ) {
       this.applyFillToCanvasRegion(fullImageData, boundingBox);
     }
-  }
-
-  /**
-   * Gets the complete image data from the canvas.
-   * @returns {ImageData}
-   */
-  getCanvasImageData() {
-    return this.visibleCtx.getImageData(
-      0,
-      0,
-      this.visibleCanvas.width,
-      this.visibleCanvas.height
-    );
   }
 
   /**
@@ -905,18 +876,7 @@ class DrawingApp {
    * @returns {void}
    */
   handleClear() {
-    this.visibleCtx.clearRect(
-      0,
-      0,
-      this.visibleCanvas.width,
-      this.visibleCanvas.height
-    );
-    this.offscreenCtx.clearRect(
-      0,
-      0,
-      this.offscreenCanvas.width,
-      this.offscreenCanvas.height
-    );
+    this.canvasManager.clearCanvas();
     /** Use immediate save for discrete clear actions */
     this.scheduleStateSave(true);
   }
@@ -968,68 +928,12 @@ class DrawingApp {
    */
   restoreCanvasState(imageData) {
     return new Promise((resolve) => {
-      this.clearOffscreenCanvas();
-      this.restoreImageDataToOffscreen(imageData);
-      this.copyOffscreenToVisibleCanvas();
-      this.applyDevicePixelRatioScaling();
+      this.canvasManager.clearOffscreenCanvas();
+      this.canvasManager.restoreImageDataToOffscreen(imageData);
+      this.canvasManager.copyOffscreenToVisibleCanvas();
+      this.canvasManager.applyDevicePixelRatioScaling();
       resolve();
     });
-  }
-
-  /**
-   * Clears the offscreen canvas.
-   * @returns {void}
-   */
-  clearOffscreenCanvas() {
-    this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
-    this.offscreenCtx.clearRect(
-      0,
-      0,
-      this.offscreenCanvas.width,
-      this.offscreenCanvas.height
-    );
-  }
-
-  /**
-   * Restores ImageData to the offscreen canvas.
-   * @param {ImageData} imageData - The ImageData to restore
-   * @returns {void}
-   */
-  restoreImageDataToOffscreen(imageData) {
-    this.offscreenCtx.putImageData(imageData, 0, 0);
-  }
-
-  /**
-   * Copies the offscreen canvas content to the visible canvas.
-   * @returns {void}
-   */
-  copyOffscreenToVisibleCanvas() {
-    this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
-    this.visibleCtx.clearRect(
-      0,
-      0,
-      this.visibleCanvas.width,
-      this.visibleCanvas.height
-    );
-    this.visibleCtx.drawImage(
-      this.offscreenCanvas,
-      0,
-      0,
-      this.visibleCanvas.width,
-      this.visibleCanvas.height,
-      0,
-      0,
-      this.visibleCanvas.width,
-      this.visibleCanvas.height
-    );
-  }
-
-  /**
-   * Applies device pixel ratio scaling to the canvas context.
-   * @returns {void}
-   */
-  applyDevicePixelRatioScaling() {
-    this.visibleCtx.scale(this.dpr, this.dpr);
   }
 
   /**
@@ -1054,176 +958,17 @@ class DrawingApp {
   }
 
   /**
-   * Validates canvas dimensions to ensure they are positive and reasonable.
-   * @param {number} width - The width to validate
-   * @param {number} height - The height to validate
-   * @returns {{width: number, height: number}} Validated dimensions
-   */
-  validateCanvasDimensions(width, height) {
-    /** @type {number} Minimum canvas dimension in pixels */
-    const minSize = 1;
-    /** @type {number} Maximum canvas dimension in pixels supported by most browsers */
-    const maxSize = 32767;
-
-    const validatedWidth = Math.max(
-      minSize,
-      Math.min(maxSize, Math.floor(width))
-    );
-    const validatedHeight = Math.max(
-      minSize,
-      Math.min(maxSize, Math.floor(height))
-    );
-
-    if (validatedWidth !== width || validatedHeight !== height) {
-      console.warn(
-        `Canvas dimensions adjusted from ${width}x${height} to ${validatedWidth}x${validatedHeight}`
-      );
-    }
-
-    return { width: validatedWidth, height: validatedHeight };
-  }
-
-  /**
-   * Resizes the canvas to fit the available viewport space and updates the visible canvas from the offscreen canvas.
-   * @returns {void}
+   * Resizes the canvas to fit the available viewport space, ensuring state is saved and initialized.
+   * @returns {Promise<void>}
    */
   async resizeCanvas() {
     // Ensure any pending saves are completed before resizing
     this.ensureStateSaved();
 
-    const calculatedSize = this.calculateCanvasSize();
-    const validatedSize = this.validateCanvasDimensions(
-      calculatedSize.width,
-      calculatedSize.height
-    );
-    const { width, height } = validatedSize;
-    const newWidth = width * this.dpr;
-    const newHeight = height * this.dpr;
-    this.setCanvasSize(width, height);
-    this.setupCanvasContext();
-    // Handle offscreen canvas sizing - initial setup or expansion
-    const needsResize =
-      newWidth > this.offscreenCanvas.width ||
-      newHeight > this.offscreenCanvas.height ||
-      this.offscreenCanvas.width === 0 ||
-      this.offscreenCanvas.height === 0;
+    // Delegate canvas resizing to canvas manager
+    await this.canvasManager.resizeCanvas();
 
-    if (needsResize) {
-      // Save existing content if canvas has valid dimensions
-      const hasExistingContent =
-        this.offscreenCanvas.width > 0 && this.offscreenCanvas.height > 0;
-      let oldOffscreen = null;
-
-      if (hasExistingContent) {
-        oldOffscreen = document.createElement("canvas");
-        oldOffscreen.width = this.offscreenCanvas.width;
-        oldOffscreen.height = this.offscreenCanvas.height;
-        oldOffscreen.getContext("2d").drawImage(this.offscreenCanvas, 0, 0);
-      }
-
-      // Set new dimensions
-      this.offscreenCanvas.width = Math.max(
-        newWidth,
-        this.offscreenCanvas.width
-      );
-      this.offscreenCanvas.height = Math.max(
-        newHeight,
-        this.offscreenCanvas.height
-      );
-      this.offscreenCtx = this.offscreenCanvas.getContext("2d");
-
-      // Restore existing content if there was any
-      if (hasExistingContent && oldOffscreen) {
-        this.offscreenCtx.drawImage(oldOffscreen, 0, 0);
-      }
-    }
-    // Redraw the visible canvas from the offscreen canvas (cropped to fit)
-    this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
-    this.visibleCtx.clearRect(
-      0,
-      0,
-      this.visibleCanvas.width,
-      this.visibleCanvas.height
-    );
-    this.visibleCtx.drawImage(
-      this.offscreenCanvas,
-      0,
-      0,
-      this.visibleCanvas.width,
-      this.visibleCanvas.height,
-      0,
-      0,
-      this.visibleCanvas.width,
-      this.visibleCanvas.height
-    );
-    this.applyDevicePixelRatioScaling();
     this.initializeHistoryIfEmpty();
-  }
-
-  /**
-   * Calculates the optimal canvas size based on available viewport space.
-   * @returns {{width: number, height: number}} The canvas size
-   */
-  calculateCanvasSize() {
-    const { headerHeight, footerHeight } = this.getLayoutElementHeights();
-    /** @type {number} Padding in pixels around the canvas for better visual spacing */
-    const padding = 24;
-
-    const availableHeight =
-      window.innerHeight - headerHeight - footerHeight - padding;
-    const availableWidth = window.innerWidth;
-
-    return { width: availableWidth, height: availableHeight };
-  }
-
-  /**
-   * Gets the heights of header and footer elements for layout calculations.
-   * @returns {{headerHeight: number, footerHeight: number}}
-   */
-  getLayoutElementHeights() {
-    const header = document.querySelector("header");
-    const footer = document.querySelector("footer");
-
-    return {
-      headerHeight: header?.offsetHeight || 0,
-      footerHeight: footer?.offsetHeight || 0,
-    };
-  }
-
-  /**
-   * Sets the physical and visual dimensions of the canvas and its container.
-   * @param {number} width - The width
-   * @param {number} height - The height
-   * @returns {void}
-   */
-  setCanvasSize(width, height) {
-    this.setContainerDimensions(width, height);
-    this.setCanvasDimensions(width, height);
-  }
-
-  /**
-   * Sets the dimensions of the canvas container element.
-   * @param {number} width - The width
-   * @param {number} height - The height
-   * @returns {void}
-   */
-  setContainerDimensions(width, height) {
-    const container = this.visibleCanvas.parentElement;
-    container.style.height = `${height}px`;
-    container.style.width = `${width}px`;
-  }
-
-  /**
-   * Sets the canvas dimensions accounting for device pixel ratio.
-   * @param {number} width - The width
-   * @param {number} height - The height
-   * @returns {void}
-   */
-  setCanvasDimensions(width, height) {
-    this.visibleCanvas.width = width * this.dpr;
-    this.visibleCanvas.height = height * this.dpr;
-    this.visibleCanvas.style.width = `${width}px`;
-    this.visibleCanvas.style.height = `${height}px`;
   }
 
   /**
@@ -1235,15 +980,6 @@ class DrawingApp {
       // Use immediate save for initial state
       this.scheduleStateSave(true);
     }
-  }
-
-  /**
-   * Sets up the canvas context transformation and scaling for high-DPI screens.
-   * @returns {void}
-   */
-  setupCanvasContext() {
-    this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
-    this.visibleCtx.scale(this.dpr, this.dpr);
   }
 }
 
@@ -1387,6 +1123,305 @@ class HistoryManager {
    */
   getMemoryUsageMB() {
     return Math.round((this.memoryUsage / (1024 * 1024)) * 100) / 100;
+  }
+}
+
+// Manages canvas setup, sizing, and rendering operations
+class CanvasManager {
+  /**
+   * Initialises the canvas manager with visible canvas and device pixel ratio.
+   * @param {HTMLCanvasElement} visibleCanvas - The visible canvas element
+   * @param {number} dpr - The device pixel ratio
+   */
+  constructor(visibleCanvas, dpr) {
+    this.visibleCanvas = visibleCanvas;
+    this.visibleCtx = this.visibleCanvas.getContext("2d");
+    this.dpr = dpr;
+
+    /** Offscreen canvas to preserve the full drawing area */
+    this.offscreenCanvas = document.createElement("canvas");
+    this.offscreenCtx = this.offscreenCanvas.getContext("2d");
+
+    /** Validate offscreen canvas context */
+    if (!this.offscreenCtx) {
+      throw new Error("Failed to get 2D context for offscreen canvas");
+    }
+  }
+
+  /**
+   * Validates canvas dimensions to ensure they are positive and reasonable.
+   * @param {number} width - The width to validate
+   * @param {number} height - The height to validate
+   * @returns {{width: number, height: number}} Validated dimensions
+   */
+  validateCanvasDimensions(width, height) {
+    /** @type {number} Minimum canvas dimension in pixels */
+    const minSize = 1;
+    /** @type {number} Maximum canvas dimension in pixels supported by most browsers */
+    const maxSize = 32767;
+
+    const validatedWidth = Math.max(
+      minSize,
+      Math.min(maxSize, Math.floor(width))
+    );
+    const validatedHeight = Math.max(
+      minSize,
+      Math.min(maxSize, Math.floor(height))
+    );
+
+    if (validatedWidth !== width || validatedHeight !== height) {
+      console.warn(
+        `Canvas dimensions adjusted from ${width}x${height} to ${validatedWidth}x${validatedHeight}`
+      );
+    }
+
+    return { width: validatedWidth, height: validatedHeight };
+  }
+
+  /**
+   * Calculates the optimal canvas size based on available viewport space.
+   * @returns {{width: number, height: number}} The canvas size
+   */
+  calculateCanvasSize() {
+    const { headerHeight, footerHeight } = this.getLayoutElementHeights();
+    /** @type {number} Padding in pixels around the canvas for better visual spacing */
+    const padding = 24;
+
+    const availableHeight =
+      window.innerHeight - headerHeight - footerHeight - padding;
+    const availableWidth = window.innerWidth;
+
+    return { width: availableWidth, height: availableHeight };
+  }
+
+  /**
+   * Gets the heights of header and footer elements for layout calculations.
+   * @returns {{headerHeight: number, footerHeight: number}}
+   */
+  getLayoutElementHeights() {
+    const header = document.querySelector("header");
+    const footer = document.querySelector("footer");
+
+    return {
+      headerHeight: header?.offsetHeight || 0,
+      footerHeight: footer?.offsetHeight || 0,
+    };
+  }
+
+  /**
+   * Sets the physical and visual dimensions of the canvas and its container.
+   * @param {number} width - The width
+   * @param {number} height - The height
+   * @returns {void}
+   */
+  setCanvasSize(width, height) {
+    this.setContainerDimensions(width, height);
+    this.setCanvasDimensions(width, height);
+  }
+
+  /**
+   * Sets the dimensions of the canvas container element.
+   * @param {number} width - The width
+   * @param {number} height - The height
+   * @returns {void}
+   */
+  setContainerDimensions(width, height) {
+    const container = this.visibleCanvas.parentElement;
+    container.style.height = `${height}px`;
+    container.style.width = `${width}px`;
+  }
+
+  /**
+   * Sets the canvas dimensions accounting for device pixel ratio.
+   * @param {number} width - The width
+   * @param {number} height - The height
+   * @returns {void}
+   */
+  setCanvasDimensions(width, height) {
+    this.visibleCanvas.width = width * this.dpr;
+    this.visibleCanvas.height = height * this.dpr;
+    this.visibleCanvas.style.width = `${width}px`;
+    this.visibleCanvas.style.height = `${height}px`;
+  }
+
+  /**
+   * Sets up the canvas context transformation and scaling for high-DPI screens.
+   * @returns {void}
+   */
+  setupCanvasContext() {
+    this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.visibleCtx.scale(this.dpr, this.dpr);
+  }
+
+  /**
+   * Applies device pixel ratio scaling to the canvas context.
+   * @returns {void}
+   */
+  applyDevicePixelRatioScaling() {
+    this.visibleCtx.scale(this.dpr, this.dpr);
+  }
+
+  /**
+   * Copies the visible canvas content to the offscreen canvas.
+   * @returns {void}
+   */
+  copyVisibleToOffscreenCanvas() {
+    /** Copy the visible canvas to the offscreen canvas */
+    this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.offscreenCtx.drawImage(this.visibleCanvas, 0, 0);
+  }
+
+  /**
+   * Copies the offscreen canvas content to the visible canvas.
+   * @returns {void}
+   */
+  copyOffscreenToVisibleCanvas() {
+    this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.visibleCtx.clearRect(
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
+    this.visibleCtx.drawImage(
+      this.offscreenCanvas,
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height,
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
+  }
+
+  /**
+   * Clears the offscreen canvas.
+   * @returns {void}
+   */
+  clearOffscreenCanvas() {
+    this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.offscreenCtx.clearRect(
+      0,
+      0,
+      this.offscreenCanvas.width,
+      this.offscreenCanvas.height
+    );
+  }
+
+  /**
+   * Gets the complete image data from the canvas.
+   * @returns {ImageData}
+   */
+  getCanvasImageData() {
+    return this.visibleCtx.getImageData(
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
+  }
+
+  /**
+   * Clears both visible and offscreen canvases.
+   * @returns {void}
+   */
+  clearCanvas() {
+    this.visibleCtx.clearRect(
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
+    this.offscreenCtx.clearRect(
+      0,
+      0,
+      this.offscreenCanvas.width,
+      this.offscreenCanvas.height
+    );
+  }
+
+  /**
+   * Restores ImageData to the offscreen canvas.
+   * @param {ImageData} imageData - The ImageData to restore
+   * @returns {void}
+   */
+  restoreImageDataToOffscreen(imageData) {
+    this.offscreenCtx.putImageData(imageData, 0, 0);
+  }
+
+  /**
+   * Resizes the canvas to fit the available viewport space and updates the visible canvas from the offscreen canvas.
+   * @returns {void}
+   */
+  async resizeCanvas() {
+    const calculatedSize = this.calculateCanvasSize();
+    const validatedSize = this.validateCanvasDimensions(
+      calculatedSize.width,
+      calculatedSize.height
+    );
+    const { width, height } = validatedSize;
+    const newWidth = width * this.dpr;
+    const newHeight = height * this.dpr;
+    this.setCanvasSize(width, height);
+    this.setupCanvasContext();
+    // Handle offscreen canvas sizing - initial setup or expansion
+    const needsResize =
+      newWidth > this.offscreenCanvas.width ||
+      newHeight > this.offscreenCanvas.height ||
+      this.offscreenCanvas.width === 0 ||
+      this.offscreenCanvas.height === 0;
+
+    if (needsResize) {
+      // Save existing content if canvas has valid dimensions
+      const hasExistingContent =
+        this.offscreenCanvas.width > 0 && this.offscreenCanvas.height > 0;
+      let oldOffscreen = null;
+
+      if (hasExistingContent) {
+        oldOffscreen = document.createElement("canvas");
+        oldOffscreen.width = this.offscreenCanvas.width;
+        oldOffscreen.height = this.offscreenCanvas.height;
+        oldOffscreen.getContext("2d").drawImage(this.offscreenCanvas, 0, 0);
+      }
+
+      // Set new dimensions
+      this.offscreenCanvas.width = Math.max(
+        newWidth,
+        this.offscreenCanvas.width
+      );
+      this.offscreenCanvas.height = Math.max(
+        newHeight,
+        this.offscreenCanvas.height
+      );
+      this.offscreenCtx = this.offscreenCanvas.getContext("2d");
+
+      // Restore existing content if there was any
+      if (hasExistingContent && oldOffscreen) {
+        this.offscreenCtx.drawImage(oldOffscreen, 0, 0);
+      }
+    }
+    // Redraw the visible canvas from the offscreen canvas (cropped to fit)
+    this.visibleCtx.setTransform(1, 0, 0, 1, 0, 0);
+    this.visibleCtx.clearRect(
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
+    this.visibleCtx.drawImage(
+      this.offscreenCanvas,
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height,
+      0,
+      0,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height
+    );
+    this.applyDevicePixelRatioScaling();
   }
 }
 
