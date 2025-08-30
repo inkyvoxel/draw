@@ -43,15 +43,14 @@ class DrawingApp {
 
     this.history = new HistoryManager();
 
-    /** State saving optimisation properties */
-    this.pendingStateSave = false;
-    this.stateSaveTimeout = null;
-    /** @type {number} Delay in milliseconds for debouncing state saves to prevent excessive history entries */
-    this.stateSaveDelay = 300;
-
-    /** UI state tracking for optimised updates */
-    this.lastUndoState = null;
-    this.lastRedoState = null;
+    /** State manager for state saving and history coordination */
+    this.stateManager = new StateManager(
+      this,
+      this.canvasManager,
+      this.history,
+      this.undoBtn,
+      this.redoBtn
+    );
 
     this.init();
   }
@@ -247,20 +246,7 @@ class DrawingApp {
    * @returns {void}
    */
   scheduleStateSave(immediate = false) {
-    if (immediate) {
-      this.saveCanvasStateNow();
-      return;
-    }
-
-    /** Cancel any pending save */
-    if (this.stateSaveTimeout) {
-      clearTimeout(this.stateSaveTimeout);
-    }
-
-    this.pendingStateSave = true;
-    this.stateSaveTimeout = setTimeout(() => {
-      this.saveCanvasStateNow();
-    }, this.stateSaveDelay);
+    this.stateManager.scheduleStateSave(immediate);
   }
 
   /**
@@ -268,26 +254,7 @@ class DrawingApp {
    * @returns {void}
    */
   saveCanvasStateNow() {
-    if (this.stateSaveTimeout) {
-      clearTimeout(this.stateSaveTimeout);
-      this.stateSaveTimeout = null;
-    }
-
-    this.pendingStateSave = false;
-
-    this.canvasManager.copyVisibleToOffscreenCanvas();
-
-    /** Get ImageData from offscreen canvas for efficient storage */
-    const imageData = this.canvasManager.offscreenCtx.getImageData(
-      0,
-      0,
-      this.canvasManager.offscreenCanvas.width,
-      this.canvasManager.offscreenCanvas.height
-    );
-
-    /** Save state to history */
-    this.history.saveState(imageData);
-    this.updateUI();
+    this.stateManager.saveCanvasStateNow();
   }
 
   /**
@@ -296,9 +263,7 @@ class DrawingApp {
    * @returns {void}
    */
   ensureStateSaved() {
-    if (this.pendingStateSave) {
-      this.saveCanvasStateNow();
-    }
+    this.stateManager.ensureStateSaved();
   }
 
   /**
@@ -363,13 +328,7 @@ class DrawingApp {
    * @returns {Promise<void>}
    */
   async handleUndo() {
-    this.clearPendingStateSaves();
-
-    const state = this.history.undo();
-    if (state) {
-      await this.restoreCanvasState(state);
-      this.updateUI();
-    }
+    await this.stateManager.performUndo();
   }
 
   /**
@@ -377,61 +336,7 @@ class DrawingApp {
    * @returns {Promise<void>}
    */
   async handleRedo() {
-    this.clearPendingStateSaves();
-
-    const state = this.history.redo();
-    if (state) {
-      await this.restoreCanvasState(state);
-      this.updateUI();
-    }
-  }
-
-  /**
-   * Clears any pending state saves to prevent interference with undo/redo operations.
-   * @returns {void}
-   */
-  clearPendingStateSaves() {
-    if (this.stateSaveTimeout) {
-      clearTimeout(this.stateSaveTimeout);
-      this.stateSaveTimeout = null;
-    }
-    this.pendingStateSave = false;
-  }
-
-  /**
-   * Restores a canvas state from ImageData.
-   * @param {ImageData} imageData - The canvas state as ImageData
-   * @returns {Promise<void>}
-   */
-  restoreCanvasState(imageData) {
-    return new Promise((resolve) => {
-      this.canvasManager.clearOffscreenCanvas();
-      this.canvasManager.restoreImageDataToOffscreen(imageData);
-      this.canvasManager.copyOffscreenToVisibleCanvas();
-      this.canvasManager.applyDevicePixelRatioScaling();
-      resolve();
-    });
-  }
-
-  /**
-   * Updates the UI, enabling or disabling undo/redo buttons only when their state changes.
-   * @returns {void}
-   */
-  updateUI() {
-    const canUndo = this.history.canUndo();
-    const canRedo = this.history.canRedo();
-
-    // Only update undo button if its state has changed
-    if (this.lastUndoState !== canUndo) {
-      this.undoBtn.disabled = !canUndo;
-      this.lastUndoState = canUndo;
-    }
-
-    // Only update redo button if its state has changed
-    if (this.lastRedoState !== canRedo) {
-      this.redoBtn.disabled = !canRedo;
-      this.lastRedoState = canRedo;
-    }
+    await this.stateManager.performRedo();
   }
 
   /**
@@ -671,6 +576,172 @@ class ToolManager {
         break;
       default:
         console.warn(`Unknown tool: ${toolName}`);
+    }
+  }
+}
+
+// Coordinates state saving/loading between CanvasManager and HistoryManager
+class StateManager {
+  /**
+   * Initialises the state manager with required dependencies.
+   * @param {Object} drawingApp - The main drawing app instance
+   * @param {CanvasManager} canvasManager - The canvas manager
+   * @param {HistoryManager} historyManager - The history manager
+   * @param {HTMLElement} undoBtn - The undo button
+   * @param {HTMLElement} redoBtn - The redo button
+   */
+  constructor(drawingApp, canvasManager, historyManager, undoBtn, redoBtn) {
+    this.drawingApp = drawingApp;
+    this.canvasManager = canvasManager;
+    this.historyManager = historyManager;
+    this.undoBtn = undoBtn;
+    this.redoBtn = redoBtn;
+
+    /** State saving optimisation properties */
+    this.pendingStateSave = false;
+    this.stateSaveTimeout = null;
+    /** @type {number} Delay in milliseconds for debouncing state saves to prevent excessive history entries */
+    this.stateSaveDelay = 300;
+
+    /** UI state tracking for optimised updates */
+    this.lastUndoState = null;
+    this.lastRedoState = null;
+  }
+
+  /**
+   * Schedules a state save with optional debouncing to optimise performance during continuous drawing.
+   * Immediate saves for discrete actions, debounced saves for continuous drawing.
+   * @param {boolean} [immediate=false] - Whether to save immediately or use debouncing
+   * @returns {void}
+   */
+  scheduleStateSave(immediate = false) {
+    if (immediate) {
+      this.saveCanvasStateNow();
+      return;
+    }
+
+    /** Cancel any pending save */
+    if (this.stateSaveTimeout) {
+      clearTimeout(this.stateSaveTimeout);
+    }
+
+    this.pendingStateSave = true;
+    this.stateSaveTimeout = setTimeout(() => {
+      this.saveCanvasStateNow();
+    }, this.stateSaveDelay);
+  }
+
+  /**
+   * Immediately saves the current canvas state to history and updates UI.
+   * @returns {void}
+   */
+  saveCanvasStateNow() {
+    if (this.stateSaveTimeout) {
+      clearTimeout(this.stateSaveTimeout);
+      this.stateSaveTimeout = null;
+    }
+
+    this.pendingStateSave = false;
+
+    this.canvasManager.copyVisibleToOffscreenCanvas();
+
+    /** Get ImageData from offscreen canvas for efficient storage */
+    const imageData = this.canvasManager.offscreenCtx.getImageData(
+      0,
+      0,
+      this.canvasManager.offscreenCanvas.width,
+      this.canvasManager.offscreenCanvas.height
+    );
+
+    /** Save state to history */
+    this.historyManager.saveState(imageData);
+    this.updateUI();
+  }
+
+  /**
+   * Ensures any pending state save is completed immediately.
+   * Used when switching tools or performing discrete actions.
+   * @returns {void}
+   */
+  ensureStateSaved() {
+    if (this.pendingStateSave) {
+      this.saveCanvasStateNow();
+    }
+  }
+
+  /**
+   * Undoes the last action, ensuring any pending saves are completed before restoring the previous canvas state.
+   * @returns {Promise<void>}
+   */
+  async performUndo() {
+    this.clearPendingStateSaves();
+
+    const state = this.historyManager.undo();
+    if (state) {
+      await this.restoreCanvasState(state);
+      this.updateUI();
+    }
+  }
+
+  /**
+   * Redoes the last undone action, ensuring any pending saves are completed before restoring the next canvas state.
+   * @returns {Promise<void>}
+   */
+  async performRedo() {
+    this.clearPendingStateSaves();
+
+    const state = this.historyManager.redo();
+    if (state) {
+      await this.restoreCanvasState(state);
+      this.updateUI();
+    }
+  }
+
+  /**
+   * Clears any pending state saves to prevent interference with undo/redo operations.
+   * @returns {void}
+   */
+  clearPendingStateSaves() {
+    if (this.stateSaveTimeout) {
+      clearTimeout(this.stateSaveTimeout);
+      this.stateSaveTimeout = null;
+    }
+    this.pendingStateSave = false;
+  }
+
+  /**
+   * Restores a canvas state from ImageData.
+   * @param {ImageData} imageData - The canvas state as ImageData
+   * @returns {Promise<void>}
+   */
+  restoreCanvasState(imageData) {
+    return new Promise((resolve) => {
+      this.canvasManager.clearOffscreenCanvas();
+      this.canvasManager.restoreImageDataToOffscreen(imageData);
+      this.canvasManager.copyOffscreenToVisibleCanvas();
+      this.canvasManager.applyDevicePixelRatioScaling();
+      resolve();
+    });
+  }
+
+  /**
+   * Updates the UI, enabling or disabling undo/redo buttons only when their state changes.
+   * @returns {void}
+   */
+  updateUI() {
+    const canUndo = this.historyManager.canUndo();
+    const canRedo = this.historyManager.canRedo();
+
+    // Only update undo button if its state has changed
+    if (this.lastUndoState !== canUndo) {
+      this.undoBtn.disabled = !canUndo;
+      this.lastUndoState = canUndo;
+    }
+
+    // Only update redo button if its state has changed
+    if (this.lastRedoState !== canRedo) {
+      this.redoBtn.disabled = !canRedo;
+      this.lastRedoState = canRedo;
     }
   }
 }
