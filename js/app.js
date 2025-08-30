@@ -1,7 +1,7 @@
-// Main class for the drawing application, handling all user interaction and canvas logic
+// Main class for the drawing application, coordinating between specialised manager classes
 class DrawingApp {
   /**
-   * Initialises the drawing application, sets up DOM references, state, and optimised state saving system.
+   * Initialises the drawing application, sets up DOM references, and instantiates manager classes.
    * @constructor
    */
   constructor() {
@@ -350,7 +350,7 @@ class DrawingApp {
     // Delegate canvas resizing to canvas manager
     await this.canvasManager.resizeCanvas();
 
-    this.initializeHistoryIfEmpty();
+    this.stateManager.initializeHistoryIfEmpty();
   }
 
   /**
@@ -358,10 +358,7 @@ class DrawingApp {
    * @returns {void}
    */
   initializeHistoryIfEmpty() {
-    if (this.history.isEmpty()) {
-      // Use immediate save for initial state
-      this.scheduleStateSave(true);
-    }
+    this.stateManager.initializeHistoryIfEmpty();
   }
 }
 
@@ -744,6 +741,17 @@ class StateManager {
       this.lastRedoState = canRedo;
     }
   }
+
+  /**
+   * Initialises the history with an empty canvas state if history is empty, using immediate save.
+   * @returns {void}
+   */
+  initializeHistoryIfEmpty() {
+    if (this.historyManager.isEmpty()) {
+      // Use immediate save for initial state
+      this.scheduleStateSave(true);
+    }
+  }
 }
 
 // Handles all drawing operations and coordinates with other engines
@@ -824,7 +832,7 @@ class DrawingEngine {
     const fillPosition = this.convertPositionToPixelCoordinates(pos, dpr);
     const targetColor = this.getPixelColor(fillPosition.x, fillPosition.y);
     const fillColor = this.hexToRgba(this.colorPicker.value);
-    /** @type {number} Color tolerance for fill operations (0-255), helps with anti-aliased edges */
+    /** @type {number} Colour tolerance for fill operations (0-255), helps with anti-aliased edges */
     const tolerance = 1;
 
     if (this.shouldSkipFill(targetColor, fillColor, tolerance)) {
@@ -929,7 +937,7 @@ class DrawingEngine {
   }
 }
 
-// Handles flood fill algorithm implementation
+// Implements flood fill algorithm with colour tolerance and bounding box optimisation
 class FloodFillEngine {
   /**
    * Initialises the flood fill engine.
@@ -940,7 +948,7 @@ class FloodFillEngine {
 
   /**
    * Performs flood fill algorithm to fill an area with the same colour.
-   * Uses bounding box optimization to only process affected regions.
+   * Uses bounding box optimisation to only process affected regions.
    * @param {ImageData} imageData - The image data to modify
    * @param {number} startX - The starting x co-ordinate
    * @param {number} startY - The starting y co-ordinate
@@ -1418,7 +1426,7 @@ class EventHandler {
   }
 }
 
-// Manages canvas setup, sizing, and rendering operations
+// Manages canvas setup, sizing, and rendering operations for both visible and offscreen canvases
 class CanvasManager {
   /**
    * Initialises the canvas manager with visible canvas and device pixel ratio.
