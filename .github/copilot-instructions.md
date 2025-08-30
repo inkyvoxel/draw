@@ -10,3 +10,5 @@
 - Write concise, unambiguous instructions and avoid redundancy in comments and documentation.
 - Ensure all code and documentation is consistent with the rest of the project.
 - Ensure the `README.md` file is up to date when changes are made to features or functionality.
+- When verifying JavaScript code, use `node -c <filename>` to check for syntax errors.
+- When verifying the app is working, open the file directly in a web browser to test functionality. No need to run a server to serve the static files.
