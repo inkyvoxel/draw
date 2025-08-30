@@ -9,4 +9,4 @@
 - Apply Object-Oriented Programming (OOP) principles where appropriate.
 - Write concise, unambiguous instructions and avoid redundancy in comments and documentation.
 - Ensure all code and documentation is consistent with the rest of the project.
-- Keep the `README.md` file updated with new project features and changes.
+- Ensure the `README.md` file is up to date when changes are made to features or functionality.
