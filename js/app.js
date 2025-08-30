@@ -9,12 +9,15 @@ class DrawingConfig {
       // History management
       HISTORY_MAX_STATES: 50,
       HISTORY_MAX_MEMORY_MB: 500,
+      MIN_STATES_THRESHOLD: 10,
 
       // State management
       STATE_SAVE_DELAY_MS: 300,
 
       // Drawing settings
       MIN_LINE_WIDTH: 0.5,
+      MAX_LINE_WIDTH: 1000,
+      DEFAULT_STROKE_COLOUR: "#000000",
       FILL_TOLERANCE: 0,
 
       // Canvas settings
@@ -26,6 +29,11 @@ class DrawingConfig {
       // Memory calculations
       BYTES_PER_MB: 1024 * 1024,
       MEMORY_CALCULATION_PRECISION: 100,
+
+      // Lifecycle management
+      MEMORY_CLEANUP_THRESHOLD_PERCENT: 50,
+      MEMORY_MONITOR_INTERVAL_MS: 300000, // 5 minutes
+      FORCE_CLEANUP_STATE_COUNT: 5,
 
       // Flood fill neighbour offsets
       NEIGHBOUR_OFFSETS: [
@@ -181,7 +189,7 @@ class DrawingApp {
       dependencies.toolManager ||
       new ToolManager(this, this.penBtn, this.fillBtn, this.visibleCanvas);
 
-    this.history = dependencies.historyManager || new HistoryManager();
+    this.historyManager = dependencies.historyManager || new HistoryManager();
 
     /** State manager for state saving and history coordination */
     this.stateManager =
@@ -189,7 +197,7 @@ class DrawingApp {
       new StateManager(
         this,
         this.canvasManager,
-        this.history,
+        this.historyManager,
         this.undoBtn,
         this.redoBtn
       );
@@ -309,7 +317,7 @@ class DrawingApp {
       size,
       "Brush size",
       DrawingConfig.DEFAULTS.MIN_LINE_WIDTH,
-      1000 // Maximum reasonable brush size
+      DrawingConfig.DEFAULTS.MAX_LINE_WIDTH // Maximum reasonable brush size
     );
   }
 
@@ -874,6 +882,62 @@ class DrawingApp {
   initializeHistoryIfEmpty() {
     this.stateManager.initializeHistoryIfEmpty();
   }
+
+  /**
+   * Cleans up all resources and removes all event listeners to prevent memory leaks.
+   * Should be called when the application is no longer needed.
+   * @returns {void}
+   */
+  destroy() {
+    try {
+      // Clean up state manager (clears timeouts)
+      this.stateManager.cleanup();
+
+      // Remove all event listeners from EventEmitter
+      this.eventEmitter.removeAllListeners();
+
+      // Remove DOM event listeners
+      this.eventHandler.removeAllEventListeners();
+
+      // Clear history to free memory
+      this.historyManager.clearHistory();
+
+      // Clear references to prevent memory leaks
+      this.clearObjectReferences();
+
+      console.debug("DrawingApp destroyed successfully");
+    } catch (error) {
+      console.error("Error during destroy:", error);
+    }
+  }
+
+  /**
+   * Clears object references to help with garbage collection.
+   * @returns {void}
+   */
+  clearObjectReferences() {
+    // Clear manager references
+    this.canvasManager = null;
+    this.eventHandler = null;
+    this.floodFillEngine = null;
+    this.drawingEngine = null;
+    this.toolManager = null;
+    this.historyManager = null;
+    this.stateManager = null;
+    this.eventEmitter = null;
+
+    // Clear DOM element references
+    this.visibleCanvas = null;
+    this.ctx = null;
+    this.colorInput = null;
+    this.sizeInput = null;
+    this.clearBtn = null;
+    this.undoBtn = null;
+    this.redoBtn = null;
+    this.penBtn = null;
+    this.fillBtn = null;
+    this.saveBtn = null;
+  }
 }
 
 // Manages the undo/redo history for the drawing application
@@ -927,7 +991,10 @@ class HistoryManager {
     );
     const effectiveMaxStates = Math.min(
       this.maxStates,
-      Math.max(10, estimatedMaxStatesByMemory)
+      Math.max(
+        DrawingConfig.DEFAULTS.MIN_STATES_THRESHOLD,
+        estimatedMaxStatesByMemory
+      )
     );
 
     if (this.states.length > effectiveMaxStates) {
@@ -1023,6 +1090,49 @@ class HistoryManager {
           DrawingConfig.DEFAULTS.MEMORY_CALCULATION_PRECISION
       ) / DrawingConfig.DEFAULTS.MEMORY_CALCULATION_PRECISION
     );
+  }
+
+  /**
+   * Clears all history states and resets memory usage for cleanup.
+   * @returns {void}
+   */
+  clearHistory() {
+    this.states = [];
+    this.currentIndex = -1;
+    this.memoryUsage = 0;
+    console.debug("History cleared - Memory usage reset to 0MB");
+  }
+
+  /**
+   * Gets the current memory usage as a percentage of the maximum allowed.
+   * @returns {number} Memory usage percentage (0-100)
+   */
+  getMemoryUsagePercentage() {
+    return Math.round((this.memoryUsage / this.maxMemoryUsage) * 100);
+  }
+
+  /**
+   * Forces aggressive cleanup by removing older states beyond the minimum required.
+   * @param {number} [minStatesToKeep=3] - Minimum number of states to preserve
+   * @returns {number} Number of states removed
+   */
+  forceCleanup(minStatesToKeep = 3) {
+    const initialCount = this.states.length;
+
+    while (this.states.length > minStatesToKeep) {
+      const removedState = this.states.shift();
+      this.memoryUsage -= this.calculateImageDataSize(removedState);
+      this.currentIndex--;
+    }
+
+    const removedCount = initialCount - this.states.length;
+    if (removedCount > 0) {
+      console.debug(
+        `Forced cleanup: removed ${removedCount} states, freed ${this.getMemoryUsageMB()}MB`
+      );
+    }
+
+    return removedCount;
   }
 }
 
@@ -1273,6 +1383,17 @@ class StateManager {
       this.scheduleStateSave(true);
     }
   }
+
+  /**
+   * Cleans up any pending timeouts and resets state for cleanup.
+   * @returns {void}
+   */
+  cleanup() {
+    this.clearPendingStateSaves();
+    this.pendingStateSave = false;
+    this.stateSaveDelay = null;
+    console.debug("StateManager cleaned up");
+  }
 }
 
 // Handles all drawing operations and coordinates with other engines
@@ -1330,7 +1451,9 @@ class DrawingEngine {
         );
       } catch (colourError) {
         console.warn("Invalid colour, using fallback:", colourError.message);
-        this.visibleCtx.strokeStyle = this.colorPicker.value || "#000000";
+        this.visibleCtx.strokeStyle =
+          this.colorPicker.value ||
+          DrawingConfig.DEFAULTS.DEFAULT_STROKE_COLOUR;
       }
 
       /** Ensure minimum line width for visibility on high-DPI screens */
@@ -1353,7 +1476,8 @@ class DrawingEngine {
     } catch (error) {
       this.drawingApp.handleError(error, "drawing");
       // Use safe defaults if everything fails
-      this.visibleCtx.strokeStyle = "#000000";
+      this.visibleCtx.strokeStyle =
+        DrawingConfig.DEFAULTS.DEFAULT_STROKE_COLOUR;
       this.visibleCtx.lineWidth = DrawingConfig.DEFAULTS.MIN_LINE_WIDTH;
       this.visibleCtx.lineCap = "round";
       this.visibleCtx.lineJoin = "round";
@@ -1795,6 +1919,33 @@ class EventHandler {
   constructor(drawingApp) {
     this.drawingApp = drawingApp;
     this.visibleCanvas = drawingApp.visibleCanvas;
+    this.memoryCleanupTimeout = null;
+
+    // Store bound event handlers for proper cleanup
+    this.boundHandlers = {
+      // Lifecycle events
+      beforeUnload: this.handleBeforeUnload.bind(this),
+      unload: this.handleUnload.bind(this),
+      visibilityChange: this.handleVisibilityChange.bind(this),
+
+      // Drawing app events
+      handlePointerDown: this.drawingApp.handlePointerDown.bind(
+        this.drawingApp
+      ),
+      handleDrawMove: this.drawingApp.handleDrawMove.bind(this.drawingApp),
+      handleDrawEnd: this.drawingApp.handleDrawEnd.bind(this.drawingApp),
+
+      // Toolbar events
+      handleClear: this.drawingApp.handleClear.bind(this.drawingApp),
+      handleUndo: this.drawingApp.handleUndo.bind(this.drawingApp),
+      handleRedo: this.drawingApp.handleRedo.bind(this.drawingApp),
+      selectPenTool: this.drawingApp.selectPenTool.bind(this.drawingApp),
+      selectFillTool: this.drawingApp.selectFillTool.bind(this.drawingApp),
+      handleSave: this.drawingApp.handleSave.bind(this.drawingApp),
+
+      // Window events
+      resizeCanvas: this.drawingApp.resizeCanvas.bind(this.drawingApp),
+    };
   }
 
   /**
@@ -1827,37 +1978,37 @@ class EventHandler {
     return [
       {
         event: "mousedown",
-        handler: this.drawingApp.handlePointerDown.bind(this.drawingApp),
+        handler: this.boundHandlers.handlePointerDown,
       },
       {
         event: "mousemove",
-        handler: this.drawingApp.handleDrawMove.bind(this.drawingApp),
+        handler: this.boundHandlers.handleDrawMove,
       },
       {
         event: "mouseup",
-        handler: this.drawingApp.handleDrawEnd.bind(this.drawingApp),
+        handler: this.boundHandlers.handleDrawEnd,
       },
       {
         event: "mouseleave",
-        handler: this.drawingApp.handleDrawEnd.bind(this.drawingApp),
+        handler: this.boundHandlers.handleDrawEnd,
       },
       {
         event: "touchstart",
-        handler: this.drawingApp.handlePointerDown.bind(this.drawingApp),
+        handler: this.boundHandlers.handlePointerDown,
         options: { passive: false },
       },
       {
         event: "touchmove",
-        handler: this.drawingApp.handleDrawMove.bind(this.drawingApp),
+        handler: this.boundHandlers.handleDrawMove,
         options: { passive: false },
       },
       {
         event: "touchend",
-        handler: this.drawingApp.handleDrawEnd.bind(this.drawingApp),
+        handler: this.boundHandlers.handleDrawEnd,
       },
       {
         event: "touchcancel",
-        handler: this.drawingApp.handleDrawEnd.bind(this.drawingApp),
+        handler: this.boundHandlers.handleDrawEnd,
       },
     ];
   }
@@ -1869,39 +2020,162 @@ class EventHandler {
   setupToolbarButtonEvents() {
     this.drawingApp.clearBtn.addEventListener(
       "click",
-      this.drawingApp.handleClear.bind(this.drawingApp)
+      this.boundHandlers.handleClear
     );
     this.drawingApp.undoBtn.addEventListener(
       "click",
-      this.drawingApp.handleUndo.bind(this.drawingApp)
+      this.boundHandlers.handleUndo
     );
     this.drawingApp.redoBtn.addEventListener(
       "click",
-      this.drawingApp.handleRedo.bind(this.drawingApp)
+      this.boundHandlers.handleRedo
     );
     this.drawingApp.penBtn.addEventListener(
       "click",
-      this.drawingApp.selectPenTool.bind(this.drawingApp)
+      this.boundHandlers.selectPenTool
     );
     this.drawingApp.fillBtn.addEventListener(
       "click",
-      this.drawingApp.selectFillTool.bind(this.drawingApp)
+      this.boundHandlers.selectFillTool
     );
     this.drawingApp.saveBtn.addEventListener(
       "click",
-      this.drawingApp.handleSave.bind(this.drawingApp)
+      this.boundHandlers.handleSave
     );
   }
 
   /**
-   * Sets up window-level events such as resize.
+   * Sets up window-level events such as resize and lifecycle events.
    * @returns {void}
    */
   setupWindowEvents() {
-    window.addEventListener(
-      "resize",
-      this.drawingApp.resizeCanvas.bind(this.drawingApp)
+    // Canvas resize handling
+    window.addEventListener("resize", this.boundHandlers.resizeCanvas);
+
+    // Lifecycle cleanup events
+    this.setupLifecycleEvents();
+  }
+
+  /**
+   * Sets up browser lifecycle events for proper cleanup.
+   * @returns {void}
+   */
+  setupLifecycleEvents() {
+    // Clean up when user is about to leave the page
+    window.addEventListener("beforeunload", this.boundHandlers.beforeUnload);
+
+    // Clean up when page is being unloaded
+    window.addEventListener("unload", this.boundHandlers.unload);
+
+    // Handle page visibility changes for memory management
+    document.addEventListener(
+      "visibilitychange",
+      this.boundHandlers.visibilityChange
     );
+  }
+
+  /**
+   * Handles the beforeunload event to ensure any pending saves are completed.
+   * @param {BeforeUnloadEvent} event - The beforeunload event
+   * @returns {void}
+   */
+  handleBeforeUnload(event) {
+    try {
+      // Ensure any pending state saves are completed
+      this.drawingApp.ensureStateSaved();
+
+      // If there are unsaved changes, warn the user
+      if (this.drawingApp.historyManager.states.length > 1) {
+        event.preventDefault();
+        // Modern browsers ignore custom messages, but setting returnValue is still required
+        event.returnValue =
+          "You have unsaved changes. Are you sure you want to leave?";
+        return event.returnValue;
+      }
+    } catch (error) {
+      console.error("Error during beforeunload:", error);
+    }
+  }
+
+  /**
+   * Handles the unload event to perform final cleanup.
+   * @returns {void}
+   */
+  handleUnload() {
+    try {
+      // Perform final cleanup
+      this.drawingApp.destroy();
+    } catch (error) {
+      // Silent fail during unload to avoid console errors
+      console.debug("Cleanup completed during unload");
+    }
+  }
+
+  /**
+   * Handles page visibility changes for memory management.
+   * @returns {void}
+   */
+  handleVisibilityChange() {
+    try {
+      if (document.hidden) {
+        // Page is now hidden - ensure any pending saves are completed
+        this.drawingApp.ensureStateSaved();
+
+        // Set up memory cleanup after extended hidden period
+        this.scheduleMemoryCleanup();
+      } else {
+        // Page is now visible - cancel any scheduled cleanup
+        this.cancelScheduledCleanup();
+
+        // Update UI states in case anything changed while hidden
+        this.drawingApp.updateHistoryButtonStates();
+      }
+    } catch (error) {
+      console.error("Error handling visibility change:", error);
+    }
+  }
+
+  /**
+   * Schedules memory cleanup after the page has been hidden for an extended period.
+   * @returns {void}
+   */
+  scheduleMemoryCleanup() {
+    // Cancel any existing cleanup timeout
+    this.cancelScheduledCleanup();
+
+    // Schedule cleanup after certain amount of time of being hidden
+    this.memoryCleanupTimeout = setTimeout(() => {
+      if (document.hidden) {
+        try {
+          const memoryUsage =
+            this.drawingApp.historyManager.getMemoryUsagePercentage();
+          if (
+            memoryUsage >
+            DrawingConfig.DEFAULTS.MEMORY_CLEANUP_THRESHOLD_PERCENT
+          ) {
+            console.debug(
+              "Performing memory cleanup due to extended inactivity"
+            );
+            this.drawingApp.historyManager.forceCleanup(
+              DrawingConfig.DEFAULTS.FORCE_CLEANUP_STATE_COUNT
+            );
+          }
+        } catch (error) {
+          console.error("Error during scheduled memory cleanup:", error);
+        }
+      }
+    }, DrawingConfig.DEFAULTS.MEMORY_MONITOR_INTERVAL_MS); // e.g., 5 minutes
+  }
+
+  /**
+   * Cancels any scheduled memory cleanup.
+   * @returns {void}
+   */
+  cancelScheduledCleanup() {
+    if (this.memoryCleanupTimeout) {
+      clearTimeout(this.memoryCleanupTimeout);
+      this.memoryCleanupTimeout = null;
+    }
   }
 
   /**
@@ -1980,6 +2254,94 @@ class EventHandler {
       x: Math.round(clientPos.x - rect.left),
       y: Math.round(clientPos.y - rect.top),
     };
+  }
+
+  /**
+   * Removes all event listeners that were set up by this EventHandler.
+   * @returns {void}
+   */
+  removeAllEventListeners() {
+    try {
+      // Remove canvas drawing events
+      const drawEvents = this.getDrawingEventConfigurations();
+      drawEvents.forEach(({ event, handler }) => {
+        this.visibleCanvas.removeEventListener(event, handler);
+      });
+
+      // Remove toolbar button events
+      if (this.drawingApp.clearBtn) {
+        this.drawingApp.clearBtn.removeEventListener(
+          "click",
+          this.boundHandlers.handleClear
+        );
+      }
+      if (this.drawingApp.undoBtn) {
+        this.drawingApp.undoBtn.removeEventListener(
+          "click",
+          this.boundHandlers.handleUndo
+        );
+      }
+      if (this.drawingApp.redoBtn) {
+        this.drawingApp.redoBtn.removeEventListener(
+          "click",
+          this.boundHandlers.handleRedo
+        );
+      }
+      if (this.drawingApp.penBtn) {
+        this.drawingApp.penBtn.removeEventListener(
+          "click",
+          this.boundHandlers.selectPenTool
+        );
+      }
+      if (this.drawingApp.fillBtn) {
+        this.drawingApp.fillBtn.removeEventListener(
+          "click",
+          this.boundHandlers.selectFillTool
+        );
+      }
+      if (this.drawingApp.saveBtn) {
+        this.drawingApp.saveBtn.removeEventListener(
+          "click",
+          this.boundHandlers.handleSave
+        );
+      }
+
+      // Remove window resize event
+      window.removeEventListener("resize", this.boundHandlers.resizeCanvas);
+
+      // Remove lifecycle events
+      this.removeLifecycleEvents();
+
+      console.debug("All DOM event listeners removed");
+    } catch (error) {
+      console.error("Error removing event listeners:", error);
+    }
+  }
+
+  /**
+   * Removes all lifecycle event listeners and cancels any scheduled cleanups.
+   * @returns {void}
+   */
+  removeLifecycleEvents() {
+    try {
+      // Cancel any scheduled memory cleanup
+      this.cancelScheduledCleanup();
+
+      // Remove lifecycle event listeners using stored bound handlers
+      window.removeEventListener(
+        "beforeunload",
+        this.boundHandlers.beforeUnload
+      );
+      window.removeEventListener("unload", this.boundHandlers.unload);
+      document.removeEventListener(
+        "visibilitychange",
+        this.boundHandlers.visibilityChange
+      );
+
+      console.debug("Lifecycle events cleanup completed");
+    } catch (error) {
+      console.error("Error removing lifecycle events:", error);
+    }
   }
 }
 
