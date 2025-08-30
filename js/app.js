@@ -23,6 +23,17 @@ class DrawingApp {
     /** Flood fill engine for fill operations */
     this.floodFillEngine = new FloodFillEngine();
 
+    /** Drawing engine for line and fill operations */
+    this.drawingEngine = new DrawingEngine(
+      this,
+      this.canvasManager,
+      this.floodFillEngine,
+      this.colorPicker,
+      this.sizePicker,
+      this.visibleCtx,
+      this.visibleCanvas
+    );
+
     this.history = new HistoryManager();
 
     /** State saving optimisation properties */
@@ -302,35 +313,7 @@ class DrawingApp {
    * @returns {void}
    */
   drawLine(from, to) {
-    this.configureBrushSettings();
-    this.drawLineSegment(from, to);
-  }
-
-  /**
-   * Configures the canvas context with current brush settings, ensuring optimal rendering on high-DPI screens.
-   * @returns {void}
-   */
-  configureBrushSettings() {
-    this.visibleCtx.strokeStyle = this.colorPicker.value;
-    /** Ensure minimum line width for visibility on high-DPI screens */
-    const minLineWidth = 0.5;
-    const baseLineWidth = Number(this.sizePicker.value);
-    this.visibleCtx.lineWidth = Math.max(baseLineWidth, minLineWidth);
-    this.visibleCtx.lineCap = "round";
-    this.visibleCtx.lineJoin = "round";
-  }
-
-  /**
-   * Draws a single line segment between two points.
-   * @param {{x: number, y: number}} from - The starting point
-   * @param {{x: number, y: number}} to - The ending point
-   * @returns {void}
-   */
-  drawLineSegment(from, to) {
-    this.visibleCtx.beginPath();
-    this.visibleCtx.moveTo(from.x, from.y);
-    this.visibleCtx.lineTo(to.x, to.y);
-    this.visibleCtx.stroke();
+    this.drawingEngine.drawLine(from, to);
   }
 
   /**
@@ -367,110 +350,7 @@ class DrawingApp {
    * @returns {void}
    */
   handleFill(pos) {
-    const fillPosition = this.convertPositionToPixelCoordinates(pos);
-    const targetColor = this.getPixelColor(fillPosition.x, fillPosition.y);
-    const fillColor = this.hexToRgba(this.colorPicker.value);
-    /** @type {number} Color tolerance for fill operations (0-255), helps with anti-aliased edges */
-    const tolerance = 1;
-
-    if (this.shouldSkipFill(targetColor, fillColor, tolerance)) {
-      return;
-    }
-
-    this.performFillOperation(fillPosition, targetColor, fillColor, tolerance);
-  }
-
-  /**
-   * Converts screen position to pixel co-ordinates accounting for device pixel ratio.
-   * @param {{x: number, y: number}} pos - The screen position
-   * @returns {{x: number, y: number}} The pixel co-ordinates
-   */
-  convertPositionToPixelCoordinates(pos) {
-    return {
-      x: Math.floor(pos.x * this.dpr),
-      y: Math.floor(pos.y * this.dpr),
-    };
-  }
-
-  /**
-   * Determines if fill operation should be skipped (when colours are the same).
-   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
-   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
-   * @param {number} [tolerance=0] - The tolerance for colour differences
-   * @returns {boolean}
-   */
-  shouldSkipFill(targetColor, fillColor, tolerance = 0) {
-    return this.floodFillEngine.colorsEqual(targetColor, fillColor, tolerance);
-  }
-
-  /**
-   * Performs the complete fill operation and immediately saves state to history.
-   * @param {{x: number, y: number}} position - The fill position
-   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
-   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
-   * @param {number} [tolerance=0] - The tolerance for colour differences
-   * @returns {void}
-   */
-  performFillOperation(position, targetColor, fillColor, tolerance = 0) {
-    // Get image data for the entire canvas
-    const fullImageData = this.canvasManager.getCanvasImageData();
-
-    // Perform flood fill using the engine
-    const result = this.floodFillEngine.performFloodFill(
-      fullImageData,
-      position.x,
-      position.y,
-      targetColor,
-      fillColor,
-      this.visibleCanvas.width,
-      this.visibleCanvas.height,
-      tolerance
-    );
-
-    // Only update the affected region if bounding box is valid
-    if (
-      result.boundingBox.minX <= result.boundingBox.maxX &&
-      result.boundingBox.minY <= result.boundingBox.maxY
-    ) {
-      this.floodFillEngine.applyFillToCanvasRegion(
-        this.visibleCtx,
-        result.imageData,
-        result.boundingBox,
-        this.visibleCanvas.width
-      );
-    }
-
-    /** Use immediate save for discrete fill actions */
-    this.scheduleStateSave(true);
-  }
-
-  /**
-   * Retrieves the RGBA colour of a pixel at (x, y) on the canvas.
-   * @param {number} x - The x co-ordinate
-   * @param {number} y - The y co-ordinate
-   * @returns {{r: number, g: number, b: number, a: number}} The pixel colour
-   */
-  getPixelColor(x, y) {
-    const imageData = this.visibleCtx.getImageData(x, y, 1, 1);
-    const data = imageData.data;
-    return {
-      r: data[0],
-      g: data[1],
-      b: data[2],
-      a: data[3],
-    };
-  }
-
-  /**
-   * Converts a hex colour string to an RGBA object.
-   * @param {string} hex - The hex colour string
-   * @returns {{r: number, g: number, b: number, a: number}} The RGBA colour
-   */
-  hexToRgba(hex) {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return { r, g, b, a: 255 };
+    this.drawingEngine.performFill(pos, this.dpr);
   }
 
   /**
@@ -725,6 +605,189 @@ class HistoryManager {
    */
   getMemoryUsageMB() {
     return Math.round((this.memoryUsage / (1024 * 1024)) * 100) / 100;
+  }
+}
+
+// Handles all drawing operations and coordinates with other engines
+class DrawingEngine {
+  /**
+   * Initialises the drawing engine with required dependencies.
+   * @param {Object} drawingApp - The main drawing app instance
+   * @param {CanvasManager} canvasManager - The canvas manager
+   * @param {FloodFillEngine} floodFillEngine - The flood fill engine
+   * @param {HTMLInputElement} colorPicker - The colour picker input
+   * @param {HTMLInputElement} sizePicker - The size picker input
+   * @param {CanvasRenderingContext2D} visibleCtx - The visible canvas context
+   * @param {HTMLCanvasElement} visibleCanvas - The visible canvas element
+   */
+  constructor(
+    drawingApp,
+    canvasManager,
+    floodFillEngine,
+    colorPicker,
+    sizePicker,
+    visibleCtx,
+    visibleCanvas
+  ) {
+    this.drawingApp = drawingApp;
+    this.canvasManager = canvasManager;
+    this.floodFillEngine = floodFillEngine;
+    this.colorPicker = colorPicker;
+    this.sizePicker = sizePicker;
+    this.visibleCtx = visibleCtx;
+    this.visibleCanvas = visibleCanvas;
+  }
+
+  /**
+   * Draws a line between two points with current brush settings.
+   * @param {{x: number, y: number}} from - The starting point
+   * @param {{x: number, y: number}} to - The ending point
+   * @returns {void}
+   */
+  drawLine(from, to) {
+    this.configureBrushSettings();
+    this.drawLineSegment(from, to);
+  }
+
+  /**
+   * Configures the canvas context with current brush settings, ensuring optimal rendering on high-DPI screens.
+   * @returns {void}
+   */
+  configureBrushSettings() {
+    this.visibleCtx.strokeStyle = this.colorPicker.value;
+    /** Ensure minimum line width for visibility on high-DPI screens */
+    const minLineWidth = 0.5;
+    const baseLineWidth = Number(this.sizePicker.value);
+    this.visibleCtx.lineWidth = Math.max(baseLineWidth, minLineWidth);
+    this.visibleCtx.lineCap = "round";
+    this.visibleCtx.lineJoin = "round";
+  }
+
+  /**
+   * Draws a single line segment between two points.
+   * @param {{x: number, y: number}} from - The starting point
+   * @param {{x: number, y: number}} to - The ending point
+   * @returns {void}
+   */
+  drawLineSegment(from, to) {
+    this.visibleCtx.beginPath();
+    this.visibleCtx.moveTo(from.x, from.y);
+    this.visibleCtx.lineTo(to.x, to.y);
+    this.visibleCtx.stroke();
+  }
+
+  /**
+   * Performs a flood fill operation at the specified position.
+   * @param {{x: number, y: number}} pos - The position to fill
+   * @param {number} dpr - The device pixel ratio
+   * @returns {void}
+   */
+  performFill(pos, dpr) {
+    const fillPosition = this.convertPositionToPixelCoordinates(pos, dpr);
+    const targetColor = this.getPixelColor(fillPosition.x, fillPosition.y);
+    const fillColor = this.hexToRgba(this.colorPicker.value);
+    /** @type {number} Color tolerance for fill operations (0-255), helps with anti-aliased edges */
+    const tolerance = 1;
+
+    if (this.shouldSkipFill(targetColor, fillColor, tolerance)) {
+      return;
+    }
+
+    this.performFillOperation(fillPosition, targetColor, fillColor, tolerance);
+  }
+
+  /**
+   * Converts screen position to pixel co-ordinates accounting for device pixel ratio.
+   * @param {{x: number, y: number}} pos - The screen position
+   * @param {number} dpr - The device pixel ratio
+   * @returns {{x: number, y: number}} The pixel co-ordinates
+   */
+  convertPositionToPixelCoordinates(pos, dpr) {
+    return {
+      x: Math.floor(pos.x * dpr),
+      y: Math.floor(pos.y * dpr),
+    };
+  }
+
+  /**
+   * Determines if fill operation should be skipped (when colours are the same).
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @param {number} [tolerance=0] - The tolerance for colour differences
+   * @returns {boolean}
+   */
+  shouldSkipFill(targetColor, fillColor, tolerance = 0) {
+    return this.floodFillEngine.colorsEqual(targetColor, fillColor, tolerance);
+  }
+
+  /**
+   * Performs the complete fill operation and immediately saves state to history.
+   * @param {{x: number, y: number}} position - The fill position
+   * @param {{r: number, g: number, b: number, a: number}} targetColor - The target colour
+   * @param {{r: number, g: number, b: number, a: number}} fillColor - The fill colour
+   * @param {number} [tolerance=0] - The tolerance for colour differences
+   * @returns {void}
+   */
+  performFillOperation(position, targetColor, fillColor, tolerance = 0) {
+    // Get image data for the entire canvas
+    const fullImageData = this.canvasManager.getCanvasImageData();
+
+    // Perform flood fill using the engine
+    const result = this.floodFillEngine.performFloodFill(
+      fullImageData,
+      position.x,
+      position.y,
+      targetColor,
+      fillColor,
+      this.visibleCanvas.width,
+      this.visibleCanvas.height,
+      tolerance
+    );
+
+    // Only update the affected region if bounding box is valid
+    if (
+      result.boundingBox.minX <= result.boundingBox.maxX &&
+      result.boundingBox.minY <= result.boundingBox.maxY
+    ) {
+      this.floodFillEngine.applyFillToCanvasRegion(
+        this.visibleCtx,
+        result.imageData,
+        result.boundingBox,
+        this.visibleCanvas.width
+      );
+    }
+
+    /** Use immediate save for discrete fill actions */
+    this.drawingApp.scheduleStateSave(true);
+  }
+
+  /**
+   * Retrieves the RGBA colour of a pixel at (x, y) on the canvas.
+   * @param {number} x - The x co-ordinate
+   * @param {number} y - The y co-ordinate
+   * @returns {{r: number, g: number, b: number, a: number}} The pixel colour
+   */
+  getPixelColor(x, y) {
+    const imageData = this.visibleCtx.getImageData(x, y, 1, 1);
+    const data = imageData.data;
+    return {
+      r: data[0],
+      g: data[1],
+      b: data[2],
+      a: data[3],
+    };
+  }
+
+  /**
+   * Converts a hex colour string to an RGBA object.
+   * @param {string} hex - The hex colour string
+   * @returns {{r: number, g: number, b: number, a: number}} The RGBA colour
+   */
+  hexToRgba(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return { r, g, b, a: 255 };
   }
 }
 
