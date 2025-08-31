@@ -80,7 +80,7 @@ class DrawingApp {
    * @constructor
    */
   constructor(dependencies = {}) {
-    /** Validate and get DOM references with proper error handling */
+    // Validate and get DOM references with proper error handling
     this.validateAndSetupDOMElements();
 
     this.drawing = false;
@@ -89,19 +89,19 @@ class DrawingApp {
       window.devicePixelRatio ||
       DrawingConfig.DEFAULTS.DEFAULT_DEVICE_PIXEL_RATIO;
 
-    /** Canvas manager for canvas operations */
+    // Canvas manager for canvas operations
     this.canvasManager =
       dependencies.canvasManager ||
       new CanvasManager(this.visibleCanvas, this.dpr);
 
-    /** Event handler for DOM event management */
+    // Event handler for DOM event management
     this.eventHandler = dependencies.eventHandler || new EventHandler(this);
 
-    /** Flood fill engine for fill operations */
+    // Flood fill engine for fill operations
     this.floodFillEngine =
       dependencies.floodFillEngine || new FloodFillEngine();
 
-    /** Drawing engine for line and fill operations */
+    // Drawing engine for line and fill operations
     this.drawingEngine =
       dependencies.drawingEngine ||
       new DrawingEngine(
@@ -113,23 +113,23 @@ class DrawingApp {
         this.visibleCanvas
       );
 
-    /** Tool manager for tool selection and UI updates */
+    // Tool manager for tool selection and UI updates
     this.toolManager =
       dependencies.toolManager ||
       new ToolManager(this, this.penBtn, this.fillBtn, this.visibleCanvas);
 
     this.historyManager = dependencies.historyManager || new HistoryManager();
 
-    /** Memory manager for cleanup strategies */
+    // Memory manager for cleanup strategies
     this.memoryManager =
       dependencies.memoryManager || new MemoryManager(this.historyManager);
 
-    /** Lifecycle manager for application lifecycle events */
+    // Lifecycle manager for application lifecycle events
     this.lifecycleManager =
       dependencies.lifecycleManager ||
       new LifecycleManager(this, this.memoryManager);
 
-    /** State manager for state saving and history coordination */
+    // State manager for state saving and history coordination
     this.stateManager =
       dependencies.stateManager ||
       new StateManager(
@@ -174,7 +174,7 @@ class DrawingApp {
   validateDOMElements(elements) {
     const missingElements = [];
 
-    /** Check each required element and collect any missing ones */
+    // Check each required element and collect any missing ones
     for (const element of elements) {
       const domElement = document.getElementById(element.id);
       if (!domElement) {
@@ -182,7 +182,7 @@ class DrawingApp {
       }
     }
 
-    /** If any elements are missing, throw a descriptive error */
+    // If any elements are missing, throw a descriptive error
     if (missingElements.length > 0) {
       const errorMessage =
         this.createMissingElementsErrorMessage(missingElements);
@@ -218,7 +218,7 @@ class DrawingApp {
    * @throws {Error} If the canvas context cannot be obtained
    */
   validateCanvasContext() {
-    /** Validate that canvas context is available */
+    // Validate that canvas context is available
     const tempCtx = this.visibleCanvas.getContext("2d");
     if (!tempCtx) {
       throw new Error("Failed to get 2D context for main canvas element");
@@ -398,7 +398,7 @@ class DrawingApp {
    * @returns {void}
    */
   handleSave() {
-    /** Ensure any pending saves are completed before downloading */
+    // Ensure any pending saves are completed before downloading
     this.ensureStateSaved();
 
     const filename = this.generateTimestampedFilename();
@@ -525,7 +525,7 @@ class DrawingApp {
   handleDrawEnd() {
     if (this.drawing) {
       this.drawing = false;
-      /** Use debounced save for drawing strokes */
+      // Use debounced save for drawing strokes
       this.scheduleStateSave(false);
 
       // Remove visual feedback for drawing state and update UI
@@ -587,7 +587,7 @@ class DrawingApp {
    */
   handleClear() {
     this.canvasManager.clearCanvas();
-    /** Use immediate save for discrete clear actions */
+    // Use immediate save for discrete clear actions
     this.scheduleStateSave(true);
     // Update undo/redo button states after clear operation
     this.updateHistoryButtonStates();
@@ -770,7 +770,7 @@ class HistoryManager {
    * @returns {number} Memory usage in bytes
    */
   calculateImageDataSize(imageData) {
-    /** ImageData uses 4 bytes per pixel (RGBA) */
+    // ImageData uses 4 bytes per pixel (RGBA)
     return imageData.data.length;
   }
 
@@ -780,7 +780,7 @@ class HistoryManager {
    * @returns {void}
    */
   trimOldStates(requiredSize) {
-    /** Keep at least 2 states for undo functionality */
+    // Keep at least 2 states for undo functionality
     while (
       this.states.length > 2 &&
       this.memoryUsage + requiredSize > this.maxMemoryUsage
@@ -918,7 +918,7 @@ class ToolManager {
    * @returns {void}
    */
   selectPenTool() {
-    /** Ensure any pending saves are completed before switching tools */
+    // Ensure any pending saves are completed before switching tools
     this.drawingApp.ensureStateSaved();
 
     this.currentTool = "pen";
@@ -932,7 +932,7 @@ class ToolManager {
    * @returns {void}
    */
   selectFillTool() {
-    /** Ensure any pending saves are completed before switching tools */
+    // Ensure any pending saves are completed before switching tools
     this.drawingApp.ensureStateSaved();
 
     this.currentTool = "fill";
@@ -985,13 +985,13 @@ class StateManager {
     this.undoBtn = undoBtn;
     this.redoBtn = redoBtn;
 
-    /** State saving optimisation properties */
+    // State saving optimisation properties
     this.pendingStateSave = false;
     this.stateSaveTimeout = null;
     /** @type {number} Delay in milliseconds for debouncing state saves to prevent excessive history entries */
     this.stateSaveDelay = DrawingConfig.DEFAULTS.STATE_SAVE_DELAY_MS;
 
-    /** UI state tracking for optimised updates */
+    // UI state tracking for optimised updates
     this.lastUndoState = null;
     this.lastRedoState = null;
   }
@@ -1008,7 +1008,7 @@ class StateManager {
       return;
     }
 
-    /** Cancel any pending save */
+    // Cancel any pending save
     if (this.stateSaveTimeout) {
       clearTimeout(this.stateSaveTimeout);
     }
@@ -1033,7 +1033,7 @@ class StateManager {
 
     this.canvasManager.copyVisibleToOffscreenCanvas();
 
-    /** Get ImageData from offscreen canvas for efficient storage */
+    // Get ImageData from offscreen canvas for efficient storage
     const imageData = this.canvasManager.offscreenCtx.getImageData(
       0,
       0,
@@ -1041,7 +1041,7 @@ class StateManager {
       this.canvasManager.offscreenCanvas.height
     );
 
-    /** Save state to history */
+    // Save state to history
     this.historyManager.saveState(imageData);
     this.updateUI();
   }
@@ -1214,7 +1214,7 @@ class DrawingEngine {
           DrawingConfig.DEFAULTS.DEFAULT_STROKE_COLOUR;
       }
 
-      /** Ensure minimum line width for visibility on high-DPI screens */
+      // Ensure minimum line width for visibility on high-DPI screens
       const minLineWidth = DrawingConfig.DEFAULTS.MIN_LINE_WIDTH;
 
       // Validate and set brush size with fallback
@@ -1351,7 +1351,7 @@ class DrawingEngine {
       );
     }
 
-    /** Use immediate save for discrete fill actions */
+    // Use immediate save for discrete fill actions
     this.drawingApp.scheduleStateSave(true);
   }
 
@@ -2032,7 +2032,7 @@ class EventHandler {
         clientX = e.changedTouches[0].clientX;
         clientY = e.changedTouches[0].clientY;
       } else {
-        /** Fallback: no touches left, use last known position (could be undefined) */
+        // Fallback: no touches left, use last known position (could be undefined)
         clientX = 0;
         clientY = 0;
       }
@@ -2064,7 +2064,7 @@ class EventHandler {
    * @returns {{x: number, y: number}} The canvas coordinates
    */
   convertClientToCanvasPosition(clientPos, rect) {
-    /** Round coordinates to ensure pixel-perfect positioning on high-DPI screens */
+    // Round coordinates to ensure pixel-perfect positioning on high-DPI screens
     return {
       x: Math.round(clientPos.x - rect.left),
       y: Math.round(clientPos.y - rect.top),
@@ -2143,11 +2143,11 @@ class CanvasManager {
     this.visibleCtx = this.visibleCanvas.getContext("2d");
     this.dpr = dpr;
 
-    /** Offscreen canvas to preserve the full drawing area */
+    // Offscreen canvas to preserve the full drawing area
     this.offscreenCanvas = document.createElement("canvas");
     this.offscreenCtx = this.offscreenCanvas.getContext("2d");
 
-    /** Validate offscreen canvas context */
+    // Validate offscreen canvas context
     if (!this.offscreenCtx) {
       throw new Error("Failed to get 2D context for offscreen canvas");
     }
@@ -2271,7 +2271,7 @@ class CanvasManager {
    * @returns {void}
    */
   copyVisibleToOffscreenCanvas() {
-    /** Copy the visible canvas to the offscreen canvas */
+    // Copy the visible canvas to the offscreen canvas
     this.offscreenCtx.setTransform(1, 0, 0, 1, 0, 0);
     this.offscreenCtx.drawImage(this.visibleCanvas, 0, 0);
   }
