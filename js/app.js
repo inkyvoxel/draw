@@ -64,6 +64,61 @@ class DrawingConfig {
 }
 
 /**
+ * Manages file operations including canvas export, download, and filename generation.
+ * Handles all file-related responsibilities for the drawing application.
+ */
+class FileManager {
+  /**
+   * Initialises the file manager.
+   * @constructor
+   */
+  constructor() {
+    // No initialisation required for static file operations
+  }
+
+  /**
+   * Exports the canvas as a PNG file with a timestamped filename.
+   * @param {HTMLCanvasElement} canvas - The canvas to export
+   * @returns {void}
+   */
+  exportCanvasAsPNG(canvas) {
+    const filename = this.generateTimestampedFilename();
+    const dataURL = canvas.toDataURL("image/png");
+    this.downloadDataURL(dataURL, filename);
+  }
+
+  /**
+   * Generates a timestamped filename for canvas exports.
+   * @returns {string} The filename in format "Draw_YYYY_MM_DD_HH_MM_SS.png"
+   */
+  generateTimestampedFilename() {
+    const now = new Date();
+    const pad = (n) => n.toString().padStart(2, "0");
+    const timestamp = `${now.getFullYear()}_${pad(now.getMonth() + 1)}_${pad(
+      now.getDate()
+    )}_${pad(now.getHours())}_${pad(now.getMinutes())}_${pad(
+      now.getSeconds()
+    )}`;
+    return `Draw_${timestamp}.png`;
+  }
+
+  /**
+   * Downloads a data URL as a file by creating a temporary anchor element.
+   * @param {string} dataURL - The data URL to download
+   * @param {string} filename - The filename for the download
+   * @returns {void}
+   */
+  downloadDataURL(dataURL, filename) {
+    const link = document.createElement("a");
+    link.href = dataURL;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
+
+/**
  * Manages DOM element validation, setup, and references.
  * Handles all DOM-related responsibilities that were previously in DrawingApp.
  */
@@ -279,6 +334,7 @@ class DrawingApp {
    * @param {MemoryManager} [dependencies.memoryManager] - Custom memory manager
    * @param {LifecycleManager} [dependencies.lifecycleManager] - Custom lifecycle manager
    * @param {StateManager} [dependencies.stateManager] - Custom state manager
+   * @param {FileManager} [dependencies.fileManager] - Custom file manager
    * @constructor
    */
   constructor(dependencies = {}) {
@@ -301,6 +357,9 @@ class DrawingApp {
 
     // Initialise UI manager to handle all UI-related operations
     this.uiManager = dependencies.uiManager || new UIManager(domElements);
+
+    // Initialise file manager to handle all file-related operations
+    this.fileManager = dependencies.fileManager || new FileManager();
 
     this.drawing = false;
     this.lastPos = { x: 0, y: 0 };
@@ -508,46 +567,14 @@ class DrawingApp {
 
   /**
    * Handles the save button click, ensuring any pending saves are completed before prompting the user to download the canvas as a PNG file.
-   * The filename is in the format Draw_YYYY_MM_DD_HH_MM_SS.png.
+   * Uses the FileManager to handle the file export operation.
    * @returns {void}
    */
   handleSave() {
     // Ensure any pending saves are completed before downloading
     this.ensureStateSaved();
 
-    const filename = this.generateTimestampedFilename();
-    const dataURL = this.canvasManager.offscreenCanvas.toDataURL("image/png");
-    this.downloadDataURL(dataURL, filename);
-  }
-
-  /**
-   * Generates a timestamped filename for canvas exports.
-   * @returns {string} The filename in format "Draw_YYYY_MM_DD_HH_MM_SS.png"
-   */
-  generateTimestampedFilename() {
-    const now = new Date();
-    const pad = (n) => n.toString().padStart(2, "0");
-    const timestamp = `${now.getFullYear()}_${pad(now.getMonth() + 1)}_${pad(
-      now.getDate()
-    )}_${pad(now.getHours())}_${pad(now.getMinutes())}_${pad(
-      now.getSeconds()
-    )}`;
-    return `Draw_${timestamp}.png`;
-  }
-
-  /**
-   * Downloads a data URL as a file.
-   * @param {string} dataURL - The data URL to download
-   * @param {string} filename - The filename for the download
-   * @returns {void}
-   */
-  downloadDataURL(dataURL, filename) {
-    const link = document.createElement("a");
-    link.href = dataURL;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    this.fileManager.exportCanvasAsPNG(this.canvasManager.offscreenCanvas);
   }
 
   /**
