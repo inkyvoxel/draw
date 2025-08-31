@@ -95,12 +95,3 @@ button.active {
 button.active:hover {
   background: #0052a3;
 }
-
-/* Visual feedback for drawing state */
-body.drawing-active canvas {
-  cursor: crosshair;
-}
-
-body.drawing-active {
-  user-select: none;
-}

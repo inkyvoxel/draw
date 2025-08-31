@@ -63,85 +63,18 @@ class DrawingConfig {
   }
 }
 
-// Main class for the drawing application, coordinating between specialised manager classes
-class DrawingApp {
+/**
+ * Manages DOM element validation, setup, and references.
+ * Handles all DOM-related responsibilities that were previously in DrawingApp.
+ */
+class DOMManager {
   /**
-   * Initialises the drawing application, sets up DOM references, and instantiates manager classes.
-   * @param {Object} [dependencies={}] - Optional dependencies for dependency injection
-   * @param {CanvasManager} [dependencies.canvasManager] - Custom canvas manager
-   * @param {EventHandler} [dependencies.eventHandler] - Custom event handler
-   * @param {FloodFillEngine} [dependencies.floodFillEngine] - Custom flood fill engine
-   * @param {DrawingEngine} [dependencies.drawingEngine] - Custom drawing engine
-   * @param {ToolManager} [dependencies.toolManager] - Custom tool manager
-   * @param {HistoryManager} [dependencies.historyManager] - Custom history manager
-   * @param {MemoryManager} [dependencies.memoryManager] - Custom memory manager
-   * @param {LifecycleManager} [dependencies.lifecycleManager] - Custom lifecycle manager
-   * @param {StateManager} [dependencies.stateManager] - Custom state manager
+   * Initialises the DOM manager and validates all required elements.
    * @constructor
    */
-  constructor(dependencies = {}) {
-    // Validate and get DOM references with proper error handling
+  constructor() {
+    this.domElements = {};
     this.validateAndSetupDOMElements();
-
-    this.drawing = false;
-    this.lastPos = { x: 0, y: 0 };
-    this.dpr =
-      window.devicePixelRatio ||
-      DrawingConfig.DEFAULTS.DEFAULT_DEVICE_PIXEL_RATIO;
-
-    // Canvas manager for canvas operations
-    this.canvasManager =
-      dependencies.canvasManager ||
-      new CanvasManager(this.visibleCanvas, this.dpr);
-
-    // Event handler for DOM event management
-    this.eventHandler = dependencies.eventHandler || new EventHandler(this);
-
-    // Flood fill engine for fill operations
-    this.floodFillEngine =
-      dependencies.floodFillEngine || new FloodFillEngine();
-
-    // Drawing engine for line and fill operations
-    this.drawingEngine =
-      dependencies.drawingEngine ||
-      new DrawingEngine(
-        this,
-        this.canvasManager,
-        this.floodFillEngine,
-        this.colorPicker,
-        this.sizePicker,
-        this.visibleCanvas
-      );
-
-    // Tool manager for tool selection and UI updates
-    this.toolManager =
-      dependencies.toolManager ||
-      new ToolManager(this, this.penBtn, this.fillBtn, this.visibleCanvas);
-
-    this.historyManager = dependencies.historyManager || new HistoryManager();
-
-    // Memory manager for cleanup strategies
-    this.memoryManager =
-      dependencies.memoryManager || new MemoryManager(this.historyManager);
-
-    // Lifecycle manager for application lifecycle events
-    this.lifecycleManager =
-      dependencies.lifecycleManager ||
-      new LifecycleManager(this, this.memoryManager);
-
-    // State manager for state saving and history coordination
-    this.stateManager =
-      dependencies.stateManager ||
-      new StateManager(
-        this,
-        this.canvasManager,
-        this.historyManager,
-        this.undoBtn,
-        this.redoBtn
-      );
-
-    this.lifecycleManager.setupLifecycleEvents();
-    this.init();
   }
 
   /**
@@ -208,7 +141,7 @@ class DrawingApp {
    */
   setupDOMReferences(elements) {
     for (const element of elements) {
-      this[element.property] = document.getElementById(element.id);
+      this.domElements[element.property] = document.getElementById(element.id);
     }
   }
 
@@ -219,10 +152,237 @@ class DrawingApp {
    */
   validateCanvasContext() {
     // Validate that canvas context is available
-    const tempCtx = this.visibleCanvas.getContext("2d");
+    const tempCtx = this.domElements.visibleCanvas.getContext("2d");
     if (!tempCtx) {
       throw new Error("Failed to get 2D context for main canvas element");
     }
+  }
+
+  /**
+   * Gets a specific DOM element reference.
+   * @param {string} property - The property name of the element
+   * @returns {HTMLElement|null} The DOM element or null if not found
+   */
+  getElement(property) {
+    return this.domElements[property] || null;
+  }
+
+  /**
+   * Gets all DOM element references.
+   * @returns {Object} Object containing all DOM element references
+   */
+  getAllElements() {
+    return { ...this.domElements };
+  }
+}
+
+/**
+ * Manages UI state, button interactions, and visual feedback.
+ * Handles all UI-related responsibilities that were previously in DrawingApp.
+ */
+class UIManager {
+  /**
+   * Initialises the UI manager with DOM element references.
+   * @param {Object} domElements - Object containing DOM element references
+   * @constructor
+   */
+  constructor(domElements) {
+    this.elements = domElements;
+  }
+
+  /**
+   * Updates the active state of tool buttons based on the selected tool.
+   * @param {string} activeTool - The currently active tool ('pen' or 'fill')
+   * @returns {void}
+   */
+  updateToolButtonStates(activeTool) {
+    try {
+      // Remove active class from all tool buttons
+      const toolButtons = [this.elements.penBtn, this.elements.fillBtn];
+      toolButtons.forEach((button) => {
+        if (button) {
+          button.classList.remove("active");
+        }
+      });
+
+      // Add active class to the selected tool button
+      if (activeTool === "pen" && this.elements.penBtn) {
+        this.elements.penBtn.classList.add("active");
+      } else if (activeTool === "fill" && this.elements.fillBtn) {
+        this.elements.fillBtn.classList.add("active");
+      }
+    } catch (error) {
+      console.error("Error updating tool button states:", error);
+    }
+  }
+
+  /**
+   * Updates the enabled/disabled state of history buttons based on availability.
+   * @param {boolean} canUndo - Whether undo is available
+   * @param {boolean} canRedo - Whether redo is available
+   * @returns {void}
+   */
+  updateHistoryButtonStates(canUndo, canRedo) {
+    try {
+      // Update undo button state
+      if (this.elements.undoBtn) {
+        this.elements.undoBtn.disabled = !canUndo;
+      }
+
+      // Update redo button state
+      if (this.elements.redoBtn) {
+        this.elements.redoBtn.disabled = !canRedo;
+      }
+    } catch (error) {
+      console.error("Error updating history button states:", error);
+    }
+  }
+
+  /**
+   * Sets the cursor style for the canvas based on the active tool.
+   * @param {string} tool - The active tool ('pen' or 'fill')
+   * @returns {void}
+   */
+  setCanvasCursor(tool) {
+    try {
+      if (this.elements.visibleCanvas) {
+        switch (tool) {
+          case "pen":
+            this.elements.visibleCanvas.style.cursor = "crosshair";
+            break;
+          case "fill":
+            this.elements.visibleCanvas.style.cursor = "default";
+            break;
+          default:
+            this.elements.visibleCanvas.style.cursor = "default";
+        }
+      }
+    } catch (error) {
+      console.error("Error setting canvas cursor:", error);
+    }
+  }
+}
+
+// Lightweight orchestrator class that coordinates between specialised manager classes
+class DrawingApp {
+  /**
+   * Initialises the drawing application using composition with dedicated manager classes.
+   * @param {Object} [dependencies={}] - Optional dependencies for dependency injection
+   * @param {DOMManager} [dependencies.domManager] - Custom DOM manager
+   * @param {UIManager} [dependencies.uiManager] - Custom UI manager
+   * @param {CanvasManager} [dependencies.canvasManager] - Custom canvas manager
+   * @param {EventHandler} [dependencies.eventHandler] - Custom event handler
+   * @param {FloodFillEngine} [dependencies.floodFillEngine] - Custom flood fill engine
+   * @param {DrawingEngine} [dependencies.drawingEngine] - Custom drawing engine
+   * @param {ToolManager} [dependencies.toolManager] - Custom tool manager
+   * @param {HistoryManager} [dependencies.historyManager] - Custom history manager
+   * @param {MemoryManager} [dependencies.memoryManager] - Custom memory manager
+   * @param {LifecycleManager} [dependencies.lifecycleManager] - Custom lifecycle manager
+   * @param {StateManager} [dependencies.stateManager] - Custom state manager
+   * @constructor
+   */
+  constructor(dependencies = {}) {
+    // Initialise DOM manager to handle all DOM-related operations
+    this.domManager = dependencies.domManager || new DOMManager();
+
+    // Get all DOM element references from the DOM manager
+    const domElements = this.domManager.getAllElements();
+
+    // Set up individual element references for backward compatibility
+    this.visibleCanvas = domElements.visibleCanvas;
+    this.colorPicker = domElements.colorPicker;
+    this.sizePicker = domElements.sizePicker;
+    this.clearBtn = domElements.clearBtn;
+    this.undoBtn = domElements.undoBtn;
+    this.redoBtn = domElements.redoBtn;
+    this.saveBtn = domElements.saveBtn;
+    this.penBtn = domElements.penBtn;
+    this.fillBtn = domElements.fillBtn;
+
+    // Initialise UI manager to handle all UI-related operations
+    this.uiManager = dependencies.uiManager || new UIManager(domElements);
+
+    this.drawing = false;
+    this.lastPos = { x: 0, y: 0 };
+    this.dpr =
+      window.devicePixelRatio ||
+      DrawingConfig.DEFAULTS.DEFAULT_DEVICE_PIXEL_RATIO;
+
+    // Canvas manager for canvas operations
+    this.canvasManager =
+      dependencies.canvasManager ||
+      new CanvasManager(this.visibleCanvas, this.dpr);
+
+    // Event handler for DOM event management
+    this.eventHandler = dependencies.eventHandler || new EventHandler(this);
+
+    // Flood fill engine for fill operations
+    this.floodFillEngine =
+      dependencies.floodFillEngine || new FloodFillEngine();
+
+    // Drawing engine for line and fill operations
+    this.drawingEngine =
+      dependencies.drawingEngine ||
+      new DrawingEngine(
+        this,
+        this.canvasManager,
+        this.floodFillEngine,
+        this.colorPicker,
+        this.sizePicker,
+        this.visibleCanvas
+      );
+
+    // Tool manager for tool selection and UI updates
+    this.toolManager =
+      dependencies.toolManager ||
+      new ToolManager(this, this.penBtn, this.fillBtn, this.visibleCanvas);
+
+    this.historyManager = dependencies.historyManager || new HistoryManager();
+
+    // Memory manager for cleanup strategies
+    this.memoryManager =
+      dependencies.memoryManager || new MemoryManager(this.historyManager);
+
+    // Lifecycle manager for application lifecycle events
+    this.lifecycleManager =
+      dependencies.lifecycleManager ||
+      new LifecycleManager(this, this.memoryManager);
+
+    // State manager for state saving and history coordination
+    this.stateManager =
+      dependencies.stateManager ||
+      new StateManager(
+        this,
+        this.canvasManager,
+        this.historyManager,
+        this.undoBtn,
+        this.redoBtn
+      );
+
+    this.lifecycleManager.setupLifecycleEvents();
+    this.init();
+  }
+
+  /**
+   * Updates the active state of tool buttons based on the selected tool.
+   * Delegates to UIManager for implementation.
+   * @param {string} activeTool - The currently active tool ('pen' or 'fill')
+   * @returns {void}
+   */
+  updateToolButtonStates(activeTool) {
+    this.uiManager.updateToolButtonStates(activeTool);
+  }
+
+  /**
+   * Updates the enabled/disabled state of history buttons based on availability.
+   * Delegates to UIManager for implementation.
+   * @returns {void}
+   */
+  updateHistoryButtonStates() {
+    this.uiManager.updateHistoryButtonStates(
+      this.historyManager.canUndo(),
+      this.historyManager.canRedo()
+    );
   }
 
   /**
@@ -334,52 +494,6 @@ class DrawingApp {
   }
 
   /**
-   * Updates the active state of tool buttons based on the selected tool.
-   * @param {string} activeTool - The currently active tool ('pen' or 'fill')
-   * @returns {void}
-   */
-  updateToolButtonStates(activeTool) {
-    try {
-      // Remove active class from all tool buttons
-      const toolButtons = [this.penBtn, this.fillBtn];
-      toolButtons.forEach((button) => {
-        if (button) {
-          button.classList.remove("active");
-        }
-      });
-
-      // Add active class to the selected tool button
-      if (activeTool === "pen" && this.penBtn) {
-        this.penBtn.classList.add("active");
-      } else if (activeTool === "fill" && this.fillBtn) {
-        this.fillBtn.classList.add("active");
-      }
-    } catch (error) {
-      this.handleError(error, "updateToolButtonStates");
-    }
-  }
-
-  /**
-   * Updates the enabled/disabled state of history buttons based on availability.
-   * @returns {void}
-   */
-  updateHistoryButtonStates() {
-    try {
-      // Update undo button state
-      if (this.undoBtn) {
-        this.undoBtn.disabled = !this.historyManager.canUndo();
-      }
-
-      // Update redo button state
-      if (this.redoBtn) {
-        this.redoBtn.disabled = !this.historyManager.canRedo();
-      }
-    } catch (error) {
-      this.handleError(error, "updateHistoryButtonStates");
-    }
-  }
-
-  /**
    * Initialises event listeners and resizes the canvas on load.
    * @returns {void}
    */
@@ -463,9 +577,6 @@ class DrawingApp {
   handleDrawStart(e) {
     this.drawing = true;
     this.lastPos = this.eventHandler.getPointerPosition(e);
-
-    // Add visual feedback for drawing state
-    document.body.classList.add("drawing-active");
   }
 
   /**
@@ -528,8 +639,7 @@ class DrawingApp {
       // Use debounced save for drawing strokes
       this.scheduleStateSave(false);
 
-      // Remove visual feedback for drawing state and update UI
-      document.body.classList.remove("drawing-active");
+      // Update UI
       this.updateHistoryButtonStates();
     }
   }
@@ -551,8 +661,6 @@ class DrawingApp {
   selectPenTool() {
     try {
       this.toolManager.selectPenTool();
-      // Update active tool button states directly
-      this.updateToolButtonStates("pen");
     } catch (error) {
       this.handleError(error, "tool-switching");
     }
@@ -565,8 +673,6 @@ class DrawingApp {
   selectFillTool() {
     try {
       this.toolManager.selectFillTool();
-      // Update active tool button states directly
-      this.updateToolButtonStates("fill");
     } catch (error) {
       this.handleError(error, "tool-switching");
     }
@@ -922,9 +1028,8 @@ class ToolManager {
     this.drawingApp.ensureStateSaved();
 
     this.currentTool = "pen";
-    this.penBtn.classList.add("active");
-    this.fillBtn.classList.remove("active");
-    this.visibleCanvas.style.cursor = "default";
+    this.drawingApp.updateToolButtonStates("pen");
+    this.drawingApp.uiManager.setCanvasCursor("pen");
   }
 
   /**
@@ -936,9 +1041,8 @@ class ToolManager {
     this.drawingApp.ensureStateSaved();
 
     this.currentTool = "fill";
-    this.fillBtn.classList.add("active");
-    this.penBtn.classList.remove("active");
-    this.visibleCanvas.style.cursor = "crosshair";
+    this.drawingApp.updateToolButtonStates("fill");
+    this.drawingApp.uiManager.setCanvasCursor("fill");
   }
 
   /**
