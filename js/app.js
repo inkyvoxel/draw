@@ -119,38 +119,121 @@ class FileManager {
 }
 
 /**
- * Manages DOM element validation, setup, and references.
- * Handles all DOM-related responsibilities that were previously in DrawingApp.
+ * Manages all validation operations for the drawing application.
+ * Centralises validation logic for colours, dimensions, brush sizes, and DOM elements.
  */
-class DOMManager {
+class ValidationManager {
   /**
-   * Initialises the DOM manager and validates all required elements.
+   * Initialises the validation manager.
    * @constructor
    */
   constructor() {
-    this.domElements = {};
-    this.validateAndSetupDOMElements();
+    // No initialisation required for static validation operations
   }
 
   /**
-   * Validates that all required DOM elements exist and sets up references.
-   * Throws descriptive errors if any required elements are missing.
-   * @returns {void}
-   * @throws {Error} If any required DOM element is not found
+   * Validates colour values ensuring they are in proper format.
+   * @param {string} colour - The colour value to validate
+   * @returns {string} The validated colour value
+   * @throws {Error} If colour format is invalid
    */
-  validateAndSetupDOMElements() {
-    const requiredElements = this.getRequiredDOMElements();
-    this.validateDOMElements(requiredElements);
-    this.setupDOMReferences(requiredElements);
-    this.validateCanvasContext();
+  validateColour(colour) {
+    if (typeof colour !== "string") {
+      throw new Error("Colour must be a string");
+    }
+
+    // Allow various colour formats and normalize them
+    const hexPattern = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
+    const rgbPattern = /^rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)$/;
+    const namedColours = [
+      "black",
+      "white",
+      "red",
+      "green",
+      "blue",
+      "yellow",
+      "cyan",
+      "magenta",
+    ];
+
+    // If it's already a valid hex colour, return it
+    if (hexPattern.test(colour)) {
+      return colour;
+    }
+
+    // If it's a valid RGB colour, allow it (browser will handle it)
+    if (rgbPattern.test(colour)) {
+      return colour;
+    }
+
+    // If it's a named colour, allow it
+    if (namedColours.includes(colour.toLowerCase())) {
+      return colour;
+    }
+
+    // Try to add # if it's missing and looks like hex
+    if (/^([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(colour)) {
+      return "#" + colour;
+    }
+
+    throw new Error(
+      "Colour must be in valid format (e.g., #ff0000, #f00, rgb(255,0,0), or named colour)"
+    );
   }
 
   /**
-   * Returns the configuration of required DOM elements.
-   * @returns {Array<{id: string, name: string, property: string}>}
+   * Validates brush size ensuring it's within acceptable limits.
+   * @param {number} size - The brush size to validate
+   * @returns {number} The validated brush size
+   * @throws {Error} If brush size is invalid
    */
-  getRequiredDOMElements() {
-    return DrawingConfig.DEFAULTS.DOM_ELEMENTS;
+  validateBrushSize(size) {
+    const sizeValue = Number(size);
+
+    if (isNaN(sizeValue)) {
+      throw new Error("Brush size must be a valid number");
+    }
+
+    if (
+      sizeValue < DrawingConfig.DEFAULTS.MIN_LINE_WIDTH ||
+      sizeValue > DrawingConfig.DEFAULTS.MAX_LINE_WIDTH
+    ) {
+      throw new Error(
+        `Brush size must be between ${DrawingConfig.DEFAULTS.MIN_LINE_WIDTH} and ${DrawingConfig.DEFAULTS.MAX_LINE_WIDTH}`
+      );
+    }
+
+    return sizeValue;
+  }
+
+  /**
+   * Validates canvas dimensions to ensure they are positive and reasonable.
+   * @param {number} width - The width to validate
+   * @param {number} height - The height to validate
+   * @returns {{width: number, height: number}} Validated dimensions
+   */
+  validateCanvasDimensions(width, height) {
+    /** @type {number} Minimum canvas dimension in pixels */
+    const minSize = 1;
+    /** @type {number} Maximum canvas dimension in pixels supported by most browsers */
+    const maxSize = DrawingConfig.DEFAULTS.MAX_CANVAS_SIZE;
+
+    const validatedWidth = Math.max(
+      minSize,
+      Math.min(maxSize, Math.floor(width))
+    );
+    const validatedHeight = Math.max(
+      minSize,
+      Math.min(maxSize, Math.floor(height))
+    );
+
+    if (validatedWidth !== width || validatedHeight !== height) {
+      console.warn(
+        `Canvas dimensions adjusted from ${width}x${height} to ${validatedWidth}x${validatedHeight}`
+      );
+    }
+
+    return { width: validatedWidth, height: validatedHeight };
   }
 
   /**
@@ -190,6 +273,58 @@ class DOMManager {
   }
 
   /**
+   * Validates that the canvas context is available.
+   * @param {HTMLCanvasElement} canvas - The canvas element to validate
+   * @returns {void}
+   * @throws {Error} If the canvas context cannot be obtained
+   */
+  validateCanvasContext(canvas) {
+    const tempCtx = canvas.getContext("2d");
+    if (!tempCtx) {
+      throw new Error("Failed to get 2D context for canvas element");
+    }
+  }
+}
+
+/**
+ * Manages DOM element validation, setup, and references.
+ * Handles all DOM-related responsibilities that were previously in DrawingApp.
+ */
+class DOMManager {
+  /**
+   * Initialises the DOM manager and validates all required elements.
+   * @constructor
+   */
+  constructor() {
+    this.domElements = {};
+    this.validationManager = new ValidationManager();
+    this.validateAndSetupDOMElements();
+  }
+
+  /**
+   * Validates that all required DOM elements exist and sets up references.
+   * Throws descriptive errors if any required elements are missing.
+   * @returns {void}
+   * @throws {Error} If any required DOM element is not found
+   */
+  validateAndSetupDOMElements() {
+    const requiredElements = this.getRequiredDOMElements();
+    this.validationManager.validateDOMElements(requiredElements);
+    this.setupDOMReferences(requiredElements);
+    this.validationManager.validateCanvasContext(
+      this.domElements.visibleCanvas
+    );
+  }
+
+  /**
+   * Returns the configuration of required DOM elements.
+   * @returns {Array<{id: string, name: string, property: string}>}
+   */
+  getRequiredDOMElements() {
+    return DrawingConfig.DEFAULTS.DOM_ELEMENTS;
+  }
+
+  /**
    * Sets up references to DOM elements.
    * @param {Array<{id: string, name: string, property: string}>} elements - The elements to reference
    * @returns {void}
@@ -197,19 +332,6 @@ class DOMManager {
   setupDOMReferences(elements) {
     for (const element of elements) {
       this.domElements[element.property] = document.getElementById(element.id);
-    }
-  }
-
-  /**
-   * Validates that the canvas context is available.
-   * @returns {void}
-   * @throws {Error} If the canvas context cannot be obtained
-   */
-  validateCanvasContext() {
-    // Validate that canvas context is available
-    const tempCtx = this.domElements.visibleCanvas.getContext("2d");
-    if (!tempCtx) {
-      throw new Error("Failed to get 2D context for main canvas element");
     }
   }
 
@@ -335,6 +457,7 @@ class DrawingApp {
    * @param {LifecycleManager} [dependencies.lifecycleManager] - Custom lifecycle manager
    * @param {StateManager} [dependencies.stateManager] - Custom state manager
    * @param {FileManager} [dependencies.fileManager] - Custom file manager
+   * @param {ValidationManager} [dependencies.validationManager] - Custom validation manager
    * @constructor
    */
   constructor(dependencies = {}) {
@@ -360,6 +483,10 @@ class DrawingApp {
 
     // Initialise file manager to handle all file-related operations
     this.fileManager = dependencies.fileManager || new FileManager();
+
+    // Initialise validation manager to handle all validation operations
+    this.validationManager =
+      dependencies.validationManager || new ValidationManager();
 
     this.drawing = false;
     this.lastPos = { x: 0, y: 0 };
@@ -451,47 +578,7 @@ class DrawingApp {
    * @throws {Error} If colour format is invalid
    */
   validateColour(colour) {
-    if (typeof colour !== "string") {
-      throw new Error("Colour must be a string");
-    }
-
-    // Allow various colour formats and normalize them
-    const hexPattern = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
-    const rgbPattern = /^rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)$/;
-    const namedColours = [
-      "black",
-      "white",
-      "red",
-      "green",
-      "blue",
-      "yellow",
-      "cyan",
-      "magenta",
-    ];
-
-    // If it's already a valid hex colour, return it
-    if (hexPattern.test(colour)) {
-      return colour;
-    }
-
-    // If it's a valid RGB colour, allow it (browser will handle it)
-    if (rgbPattern.test(colour)) {
-      return colour;
-    }
-
-    // If it's a named colour, allow it
-    if (namedColours.includes(colour.toLowerCase())) {
-      return colour;
-    }
-
-    // Try to add # if it's missing and looks like hex
-    if (/^([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/.test(colour)) {
-      return "#" + colour;
-    }
-
-    throw new Error(
-      "Colour must be in valid format (e.g., #ff0000, #f00, rgb(255,0,0), or named colour)"
-    );
+    return this.validationManager.validateColour(colour);
   }
 
   /**
@@ -1313,6 +1400,7 @@ class DrawingEngine {
     this.sizePicker = sizePicker;
     this.visibleCanvas = visibleCanvas;
     this.visibleCtx = visibleCanvas.getContext("2d");
+    this.validationManager = new ValidationManager();
   }
 
   /**
@@ -1351,17 +1439,9 @@ class DrawingEngine {
       // Validate and set brush size with fallback
       let baseLineWidth;
       try {
-        const sizeValue = Number(this.sizePicker.value);
-        if (
-          isNaN(sizeValue) ||
-          sizeValue < DrawingConfig.DEFAULTS.MIN_LINE_WIDTH ||
-          sizeValue > DrawingConfig.DEFAULTS.MAX_LINE_WIDTH
-        ) {
-          throw new Error(
-            `Brush size must be between ${DrawingConfig.DEFAULTS.MIN_LINE_WIDTH} and ${DrawingConfig.DEFAULTS.MAX_LINE_WIDTH}`
-          );
-        }
-        baseLineWidth = sizeValue;
+        baseLineWidth = this.validationManager.validateBrushSize(
+          this.sizePicker.value
+        );
       } catch (sizeError) {
         console.warn("Invalid brush size, using fallback:", sizeError.message);
         baseLineWidth = Number(this.sizePicker.value) || 1;
@@ -2273,6 +2353,7 @@ class CanvasManager {
     this.visibleCanvas = visibleCanvas;
     this.visibleCtx = this.visibleCanvas.getContext("2d");
     this.dpr = dpr;
+    this.validationManager = new ValidationManager();
 
     // Offscreen canvas to preserve the full drawing area
     this.offscreenCanvas = document.createElement("canvas");
@@ -2282,36 +2363,6 @@ class CanvasManager {
     if (!this.offscreenCtx) {
       throw new Error("Failed to get 2D context for offscreen canvas");
     }
-  }
-
-  /**
-   * Validates canvas dimensions to ensure they are positive and reasonable.
-   * @param {number} width - The width to validate
-   * @param {number} height - The height to validate
-   * @returns {{width: number, height: number}} Validated dimensions
-   */
-  validateCanvasDimensions(width, height) {
-    /** @type {number} Minimum canvas dimension in pixels */
-    const minSize = 1;
-    /** @type {number} Maximum canvas dimension in pixels supported by most browsers */
-    const maxSize = DrawingConfig.DEFAULTS.MAX_CANVAS_SIZE;
-
-    const validatedWidth = Math.max(
-      minSize,
-      Math.min(maxSize, Math.floor(width))
-    );
-    const validatedHeight = Math.max(
-      minSize,
-      Math.min(maxSize, Math.floor(height))
-    );
-
-    if (validatedWidth !== width || validatedHeight !== height) {
-      console.warn(
-        `Canvas dimensions adjusted from ${width}x${height} to ${validatedWidth}x${validatedHeight}`
-      );
-    }
-
-    return { width: validatedWidth, height: validatedHeight };
   }
 
   /**
@@ -2493,7 +2544,7 @@ class CanvasManager {
    */
   async resizeCanvas() {
     const calculatedSize = this.calculateCanvasSize();
-    const validatedSize = this.validateCanvasDimensions(
+    const validatedSize = this.validationManager.validateCanvasDimensions(
       calculatedSize.width,
       calculatedSize.height
     );
