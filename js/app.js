@@ -28,7 +28,6 @@ class DrawingConfig {
 
       // Memory calculations
       BYTES_PER_MB: 1024 * 1024,
-      MEMORY_CALCULATION_PRECISION: 100,
 
       // Lifecycle management
       MEMORY_CLEANUP_THRESHOLD_PERCENT: 50,
@@ -1066,9 +1065,8 @@ class HistoryManager {
   getMemoryUsageMB() {
     return (
       Math.round(
-        (this.memoryUsage / DrawingConfig.DEFAULTS.BYTES_PER_MB) *
-          DrawingConfig.DEFAULTS.MEMORY_CALCULATION_PRECISION
-      ) / DrawingConfig.DEFAULTS.MEMORY_CALCULATION_PRECISION
+        (this.memoryUsage / DrawingConfig.DEFAULTS.BYTES_PER_MB) * 100
+      ) / 100
     );
   }
 
