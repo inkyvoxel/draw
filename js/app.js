@@ -82,7 +82,6 @@ class DrawingApp {
   constructor(dependencies = {}) {
     /** Validate and get DOM references with proper error handling */
     this.validateAndSetupDOMElements();
-    this.visibleCtx = this.visibleCanvas.getContext("2d");
 
     this.drawing = false;
     this.lastPos = { x: 0, y: 0 };
@@ -111,7 +110,6 @@ class DrawingApp {
         this.floodFillEngine,
         this.colorPicker,
         this.sizePicker,
-        this.visibleCtx,
         this.visibleCanvas
       );
 
@@ -225,63 +223,6 @@ class DrawingApp {
     if (!tempCtx) {
       throw new Error("Failed to get 2D context for main canvas element");
     }
-  }
-
-  /**
-   * Validates numeric input parameters with range checking.
-   * @param {number} value - The value to validate
-   * @param {string} paramName - The parameter name for error messages
-   * @param {number} [min=0] - Minimum allowed value
-   * @param {number} [max=Infinity] - Maximum allowed value
-   * @returns {number} The validated value
-   * @throws {Error} If validation fails
-   */
-  validateNumericInput(value, paramName, min = 0, max = Infinity) {
-    if (typeof value !== "number" || isNaN(value)) {
-      throw new Error(`${paramName} must be a valid number`);
-    }
-    if (value < min || value > max) {
-      throw new Error(`${paramName} must be between ${min} and ${max}`);
-    }
-    return value;
-  }
-
-  /**
-   * Validates brush size input ensuring it meets application requirements.
-   * @param {number} size - The brush size to validate
-   * @returns {number} The validated brush size
-   * @throws {Error} If brush size is invalid
-   */
-  validateBrushSize(size) {
-    return this.validateNumericInput(
-      size,
-      "Brush size",
-      DrawingConfig.DEFAULTS.MIN_LINE_WIDTH,
-      DrawingConfig.DEFAULTS.MAX_LINE_WIDTH // Maximum reasonable brush size
-    );
-  }
-
-  /**
-   * Validates canvas dimensions ensuring they meet browser limitations.
-   * @param {number} width - The canvas width to validate
-   * @param {number} height - The canvas height to validate
-   * @returns {{width: number, height: number}} The validated dimensions
-   * @throws {Error} If dimensions are invalid
-   */
-  validateCanvasDimensions(width, height) {
-    const validatedWidth = this.validateNumericInput(
-      width,
-      "Canvas width",
-      1,
-      DrawingConfig.DEFAULTS.MAX_CANVAS_SIZE
-    );
-    const validatedHeight = this.validateNumericInput(
-      height,
-      "Canvas height",
-      1,
-      DrawingConfig.DEFAULTS.MAX_CANVAS_SIZE
-    );
-    return { width: validatedWidth, height: validatedHeight };
   }
 
   /**
@@ -1224,7 +1165,6 @@ class DrawingEngine {
    * @param {FloodFillEngine} floodFillEngine - The flood fill engine
    * @param {HTMLInputElement} colorPicker - The colour picker input
    * @param {HTMLInputElement} sizePicker - The size picker input
-   * @param {CanvasRenderingContext2D} visibleCtx - The visible canvas context
    * @param {HTMLCanvasElement} visibleCanvas - The visible canvas element
    */
   constructor(
@@ -1233,7 +1173,6 @@ class DrawingEngine {
     floodFillEngine,
     colorPicker,
     sizePicker,
-    visibleCtx,
     visibleCanvas
   ) {
     this.drawingApp = drawingApp;
@@ -1241,8 +1180,8 @@ class DrawingEngine {
     this.floodFillEngine = floodFillEngine;
     this.colorPicker = colorPicker;
     this.sizePicker = sizePicker;
-    this.visibleCtx = visibleCtx;
     this.visibleCanvas = visibleCanvas;
+    this.visibleCtx = visibleCanvas.getContext("2d");
   }
 
   /**
@@ -1281,9 +1220,17 @@ class DrawingEngine {
       // Validate and set brush size with fallback
       let baseLineWidth;
       try {
-        baseLineWidth = this.drawingApp.validateBrushSize(
-          Number(this.sizePicker.value)
-        );
+        const sizeValue = Number(this.sizePicker.value);
+        if (
+          isNaN(sizeValue) ||
+          sizeValue < DrawingConfig.DEFAULTS.MIN_LINE_WIDTH ||
+          sizeValue > DrawingConfig.DEFAULTS.MAX_LINE_WIDTH
+        ) {
+          throw new Error(
+            `Brush size must be between ${DrawingConfig.DEFAULTS.MIN_LINE_WIDTH} and ${DrawingConfig.DEFAULTS.MAX_LINE_WIDTH}`
+          );
+        }
+        baseLineWidth = sizeValue;
       } catch (sizeError) {
         console.warn("Invalid brush size, using fallback:", sizeError.message);
         baseLineWidth = Number(this.sizePicker.value) || 1;
