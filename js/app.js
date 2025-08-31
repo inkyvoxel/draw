@@ -63,74 +63,6 @@ class DrawingConfig {
   }
 }
 
-// Simple event emitter for inter-component communication
-class EventEmitter {
-  /**
-   * Initialises the event emitter with an empty events map.
-   * @constructor
-   */
-  constructor() {
-    this.events = new Map();
-  }
-
-  /**
-   * Subscribes to an event with a callback function.
-   * @param {string} event - The event name
-   * @param {Function} callback - The callback function
-   * @returns {void}
-   */
-  on(event, callback) {
-    if (!this.events.has(event)) {
-      this.events.set(event, []);
-    }
-    this.events.get(event).push(callback);
-  }
-
-  /**
-   * Unsubscribes a specific callback from an event.
-   * @param {string} event - The event name
-   * @param {Function} callback - The callback function to remove
-   * @returns {void}
-   */
-  off(event, callback) {
-    if (!this.events.has(event)) {
-      return;
-    }
-    const callbacks = this.events.get(event);
-    const index = callbacks.indexOf(callback);
-    if (index > -1) {
-      callbacks.splice(index, 1);
-    }
-  }
-
-  /**
-   * Emits an event with optional data.
-   * @param {string} event - The event name
-   * @param {*} data - The event data
-   * @returns {void}
-   */
-  emit(event, data) {
-    const callbacks = this.events.get(event);
-    if (callbacks) {
-      callbacks.forEach((callback) => {
-        try {
-          callback(data);
-        } catch (error) {
-          console.error(`Error in event callback for '${event}':`, error);
-        }
-      });
-    }
-  }
-
-  /**
-   * Removes all event listeners.
-   * @returns {void}
-   */
-  removeAllListeners() {
-    this.events.clear();
-  }
-}
-
 // Main class for the drawing application, coordinating between specialised manager classes
 class DrawingApp {
   /**
@@ -157,9 +89,6 @@ class DrawingApp {
     this.dpr =
       window.devicePixelRatio ||
       DrawingConfig.DEFAULTS.DEFAULT_DEVICE_PIXEL_RATIO;
-
-    /** Event emitter for inter-component communication */
-    this.eventEmitter = dependencies.eventEmitter || new EventEmitter();
 
     /** Canvas manager for canvas operations */
     this.canvasManager =
@@ -213,7 +142,6 @@ class DrawingApp {
         this.redoBtn
       );
 
-    this.setupEventListeners();
     this.lifecycleManager.setupLifecycleEvents();
     this.init();
   }
@@ -465,140 +393,6 @@ class DrawingApp {
   }
 
   /**
-   * Sets up event listeners for inter-component communication and UI updates.
-   * @returns {void}
-   */
-  setupEventListeners() {
-    // Listen for tool change events to update UI and track usage
-    this.eventEmitter.on("tool:changed", (data) => {
-      this.handleToolChangedEvent(data);
-    });
-
-    // Listen for drawing state events to provide visual feedback
-    this.eventEmitter.on("drawing:started", (data) => {
-      this.handleDrawingStartedEvent(data);
-    });
-
-    this.eventEmitter.on("drawing:ended", (data) => {
-      this.handleDrawingEndedEvent(data);
-    });
-
-    // Listen for canvas events to update UI state
-    this.eventEmitter.on("canvas:cleared", (data) => {
-      this.handleCanvasClearedEvent(data);
-    });
-
-    // Listen for history events to update undo/redo button states
-    this.eventEmitter.on("history:undo", (data) => {
-      this.handleHistoryUndoEvent(data);
-    });
-
-    this.eventEmitter.on("history:redo", (data) => {
-      this.handleHistoryRedoEvent(data);
-    });
-
-    // Listen for state save events for analytics and debugging
-    this.eventEmitter.on("state:save", (data) => {
-      this.handleStateSaveEvent(data);
-    });
-  }
-
-  /**
-   * Handles tool changed events by updating UI button states and tracking usage.
-   * @param {Object} data - The event data containing tool information
-   * @returns {void}
-   */
-  handleToolChangedEvent(data) {
-    // Update active tool button states
-    this.updateToolButtonStates(data.tool);
-
-    // Debug logging for development
-    console.debug(`Tool changed to: ${data.tool}`);
-  }
-
-  /**
-   * Handles drawing started events by adding visual feedback.
-   * @param {Object} data - The event data containing drawing start information
-   * @returns {void}
-   */
-  handleDrawingStartedEvent(data) {
-    // Add visual feedback for drawing state
-    document.body.classList.add("drawing-active");
-
-    // Debug logging for development
-    console.debug("Drawing started at position:", data.position);
-  }
-
-  /**
-   * Handles drawing ended events by removing visual feedback and updating UI.
-   * @param {Object} data - The event data
-   * @returns {void}
-   */
-  handleDrawingEndedEvent(data) {
-    // Remove visual feedback for drawing state
-    document.body.classList.remove("drawing-active");
-
-    // Update undo/redo button states after drawing operation
-    this.updateHistoryButtonStates();
-
-    // Debug logging for development
-    console.debug("Drawing ended");
-  }
-
-  /**
-   * Handles canvas cleared events by updating UI state.
-   * @param {Object} data - The event data
-   * @returns {void}
-   */
-  handleCanvasClearedEvent(data) {
-    // Update undo/redo button states after clear operation
-    this.updateHistoryButtonStates();
-
-    // Debug logging for development
-    console.debug("Canvas cleared");
-  }
-
-  /**
-   * Handles history undo events by updating UI button states.
-   * @param {Object} data - The event data
-   * @returns {void}
-   */
-  handleHistoryUndoEvent(data) {
-    // Update undo/redo button states after undo operation
-    this.updateHistoryButtonStates();
-
-    // Debug logging for development
-    console.debug("Undo performed");
-  }
-
-  /**
-   * Handles history redo events by updating UI button states.
-   * @param {Object} data - The event data
-   * @returns {void}
-   */
-  handleHistoryRedoEvent(data) {
-    // Update undo/redo button states after redo operation
-    this.updateHistoryButtonStates();
-
-    // Debug logging for development
-    console.debug("Redo performed");
-  }
-
-  /**
-   * Handles state save events for analytics and debugging.
-   * @param {Object} data - The event data containing save information
-   * @returns {void}
-   */
-  handleStateSaveEvent(data) {
-    // Track state save frequency for performance monitoring
-    if (data.immediate) {
-      console.debug("Immediate state save requested");
-    } else {
-      console.debug("Debounced state save requested");
-    }
-  }
-
-  /**
    * Updates the active state of tool buttons based on the selected tool.
    * @param {string} activeTool - The currently active tool ('pen' or 'fill')
    * @returns {void}
@@ -606,7 +400,7 @@ class DrawingApp {
   updateToolButtonStates(activeTool) {
     try {
       // Remove active class from all tool buttons
-      const toolButtons = [this.penButton, this.fillButton];
+      const toolButtons = [this.penBtn, this.fillBtn];
       toolButtons.forEach((button) => {
         if (button) {
           button.classList.remove("active");
@@ -614,10 +408,10 @@ class DrawingApp {
       });
 
       // Add active class to the selected tool button
-      if (activeTool === "pen" && this.penButton) {
-        this.penButton.classList.add("active");
-      } else if (activeTool === "fill" && this.fillButton) {
-        this.fillButton.classList.add("active");
+      if (activeTool === "pen" && this.penBtn) {
+        this.penBtn.classList.add("active");
+      } else if (activeTool === "fill" && this.fillBtn) {
+        this.fillBtn.classList.add("active");
       }
     } catch (error) {
       this.handleError(error, "updateToolButtonStates");
@@ -631,13 +425,13 @@ class DrawingApp {
   updateHistoryButtonStates() {
     try {
       // Update undo button state
-      if (this.undoButton) {
-        this.undoButton.disabled = !this.historyManager.canUndo();
+      if (this.undoBtn) {
+        this.undoBtn.disabled = !this.historyManager.canUndo();
       }
 
       // Update redo button state
-      if (this.redoButton) {
-        this.redoButton.disabled = !this.historyManager.canRedo();
+      if (this.redoBtn) {
+        this.redoBtn.disabled = !this.historyManager.canRedo();
       }
     } catch (error) {
       this.handleError(error, "updateHistoryButtonStates");
@@ -728,7 +522,9 @@ class DrawingApp {
   handleDrawStart(e) {
     this.drawing = true;
     this.lastPos = this.eventHandler.getPointerPosition(e);
-    this.eventEmitter.emit("drawing:started", { position: this.lastPos });
+
+    // Add visual feedback for drawing state
+    document.body.classList.add("drawing-active");
   }
 
   /**
@@ -759,7 +555,6 @@ class DrawingApp {
   scheduleStateSave(immediate = false) {
     try {
       this.stateManager.scheduleStateSave(immediate);
-      this.eventEmitter.emit("state:save", { immediate });
     } catch (error) {
       this.handleError(error, "state-management");
     }
@@ -791,7 +586,10 @@ class DrawingApp {
       this.drawing = false;
       /** Use debounced save for drawing strokes */
       this.scheduleStateSave(false);
-      this.eventEmitter.emit("drawing:ended", {});
+
+      // Remove visual feedback for drawing state and update UI
+      document.body.classList.remove("drawing-active");
+      this.updateHistoryButtonStates();
     }
   }
 
@@ -812,7 +610,8 @@ class DrawingApp {
   selectPenTool() {
     try {
       this.toolManager.selectPenTool();
-      this.eventEmitter.emit("tool:changed", { tool: "pen" });
+      // Update active tool button states directly
+      this.updateToolButtonStates("pen");
     } catch (error) {
       this.handleError(error, "tool-switching");
     }
@@ -825,7 +624,8 @@ class DrawingApp {
   selectFillTool() {
     try {
       this.toolManager.selectFillTool();
-      this.eventEmitter.emit("tool:changed", { tool: "fill" });
+      // Update active tool button states directly
+      this.updateToolButtonStates("fill");
     } catch (error) {
       this.handleError(error, "tool-switching");
     }
@@ -848,7 +648,8 @@ class DrawingApp {
     this.canvasManager.clearCanvas();
     /** Use immediate save for discrete clear actions */
     this.scheduleStateSave(true);
-    this.eventEmitter.emit("canvas:cleared", {});
+    // Update undo/redo button states after clear operation
+    this.updateHistoryButtonStates();
   }
 
   /**
@@ -857,7 +658,8 @@ class DrawingApp {
    */
   async handleUndo() {
     await this.stateManager.performUndo();
-    this.eventEmitter.emit("history:undo", {});
+    // Update undo/redo button states after undo operation
+    this.updateHistoryButtonStates();
   }
 
   /**
@@ -866,7 +668,8 @@ class DrawingApp {
    */
   async handleRedo() {
     await this.stateManager.performRedo();
-    this.eventEmitter.emit("history:redo", {});
+    // Update undo/redo button states after redo operation
+    this.updateHistoryButtonStates();
   }
 
   /**
@@ -911,9 +714,6 @@ class DrawingApp {
       // Clean up memory manager (cancels any pending cleanup)
       this.memoryManager.cleanup();
 
-      // Remove all event listeners from EventEmitter
-      this.eventEmitter.removeAllListeners();
-
       // Remove DOM event listeners
       this.eventHandler.removeAllEventListeners();
 
@@ -944,7 +744,6 @@ class DrawingApp {
     this.memoryManager = null;
     this.lifecycleManager = null;
     this.stateManager = null;
-    this.eventEmitter = null;
 
     // Clear DOM element references
     this.visibleCanvas = null;
